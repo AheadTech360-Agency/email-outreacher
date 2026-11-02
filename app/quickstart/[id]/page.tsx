@@ -121,6 +121,14 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
         onChanged()
       })
       .catch((e: unknown) => toast.error("Couldn't do that", { description: e instanceof Error ? e.message : undefined }))
+  if (run.status === "failed")
+    return (
+      <ManagerOnly>
+        <Button onClick={() => void act(resumeQuickstart(wsId, run.id), "Trying that step again")}>
+          <Play /> Try again
+        </Button>
+      </ManagerOnly>
+    )
   if (!live) return null
   return (
     <div className="flex gap-2">
