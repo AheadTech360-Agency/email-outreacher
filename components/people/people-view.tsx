@@ -42,7 +42,7 @@ import { useStore } from "@/lib/store"
 const MAX_REVEAL = 25
 // Posts and emails run 25 leads to a job (the server's limit); a bigger selection runs as several, one after another.
 const BATCH = 25
-const MAX_LEADS = 200
+const MAX_LEADS = 2000
 const COST_PER_EMAIL = 0.003 // hook, email and score on Haiku
 
 function chunks<T>(items: T[], size = BATCH): T[][] {
@@ -544,7 +544,7 @@ function PeopleList({ wsId }: { wsId: string }) {
         open={confirmingWrite}
         onOpenChange={setConfirmingWrite}
         title={`Write ${withLead.length} emails?`}
-        description={`Claude writes one email for each, ${BATCH} at a time. About ${formatUsd(withLead.length * COST_PER_EMAIL)} in all, logged on Usage. Drafts wait in Review; nothing is sent.`}
+        description={`Claude writes one email for each, ${BATCH} at a time. About ${formatUsd(withLead.length * COST_PER_EMAIL)} in all, logged on Usage. Drafts wait in Review; nothing is sent. Leads without posts get an email without them, so fetch posts first. Keep this tab open until it finishes: a big selection takes a while.`}
         confirmLabel={`Write ${withLead.length}`}
         onConfirm={() => {
           setConfirmingWrite(false)
@@ -642,7 +642,9 @@ function FetchPostsDialog({
             <Input id="posts-days" type="number" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} />
           </div>
           <p className={bad ? "col-span-2 text-xs text-destructive" : "col-span-2 text-xs text-muted-foreground tabular-nums"}>
-            {bad ? "Posts: 1 to 20. Days: 1 to 365." : `At most about ${formatUsd(ceiling)}, if every lead has both sources and that many posts.`}
+            {bad
+              ? "Posts: 1 to 20. Days: 1 to 365."
+              : `At most about ${formatUsd(ceiling)}, if every lead has both sources and that many posts.${people.length > BATCH ? ` Runs ${BATCH} leads at a time: keep this tab open until it finishes.` : ""}`}
           </p>
         </form>
         <DialogFooter>
