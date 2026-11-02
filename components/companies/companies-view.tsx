@@ -14,6 +14,7 @@ import { PipelineSheet } from "@/components/companies/pipeline-sheet"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
+import { Pager } from "@/components/pager"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -69,6 +70,8 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const companies = useApi(() => fetchPipeline(wsId, activeIcp?.id), [wsId, activeIcp?.id])
   const people = useApi(() => fetchStakeholders(wsId), [wsId])
   const [filter, setFilter] = useState<"all" | PipelineStatus>("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [finding, setFinding] = useState<CompanySource | null>(null)
@@ -86,14 +89,19 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const visible = list.filter(
     (c) => (filter === "all" || c.status === filter) && (!q || `${c.name} ${c.domain ?? ""}`.toLowerCase().includes(q)),
   )
+  // One page of the filtered companies; a filter that shrinks the list past this page shows its last page.
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
+  const current = Math.min(page, pages)
+  const shown = visible.slice((current - 1) * pageSize, current * pageSize)
   const picked = list.filter((c) => selected.has(c.id))
   const toResearch = picked.filter(needsResearch)
   const qualified = picked.filter((c) => c.status === "qualified")
-  const allChecked = visible.length > 0 && visible.every((c) => selected.has(c.id))
+  const allChecked = shown.length > 0 && shown.every((c) => selected.has(c.id))
 
   const changeIcp = (id: string) => {
     setIcpId(id)
     setSelected(new Set())
+    setPage(1)
     router.replace(id === "all" ? "/companies" : `/companies?icp=${id}`, { scroll: false })
   }
   const toggle = (id: string, on: boolean) =>
@@ -162,7 +170,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         </Select>
         <div className="relative w-full sm:w-56">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label="Search companies" placeholder="Search name or domain" className="pl-8" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <Input aria-label="Search companies" placeholder="Search name or domain" className="pl-8" value={query} onChange={(e) => (setQuery(e.target.value), setPage(1))} />
         </div>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           <ManagerOnly><Button variant="outline" onClick={() => setFinding("lead_intel")}>
@@ -184,7 +192,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             type="button"
             role="tab"
             aria-selected={filter === f.value}
-            onClick={() => setFilter(f.value)}
+            onClick={() => (setFilter(f.value), setPage(1))}
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
               filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -247,9 +255,15 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    aria-label="Select all shown"
+                    aria-label="Select this page"
                     checked={allChecked}
-                    onCheckedChange={(v) => setSelected(v === true ? new Set(visible.map((c) => c.id)) : new Set())}
+                    onCheckedChange={(v) =>
+                      setSelected((set) => {
+                        const next = new Set(set)
+                        shown.forEach((c) => (v === true ? next.add(c.id) : next.delete(c.id)))
+                        return next
+                      })
+                    }
                   />
                 </TableHead>
                 <TableHead>Company</TableHead>
@@ -264,7 +278,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.map((c) => (
+              {shown.map((c) => (
                 <TableRow key={c.id} className="cursor-pointer" onClick={() => setOpen(c)}>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onCheckedChange={(v) => toggle(c.id, v === true)} />
@@ -300,6 +314,15 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               ))}
             </TableBody>
           </Table>
+          <div className="border-t px-3 py-2">
+            <Pager
+              page={current}
+              pageSize={pageSize}
+              total={visible.length}
+              onPage={setPage}
+              onPageSize={(n) => (setPageSize(n), setPage(1))}
+            />
+          </div>
         </div>
       )}
 

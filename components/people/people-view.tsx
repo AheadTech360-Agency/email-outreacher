@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
+import { Pager } from "@/components/pager"
 import { AddPersonDialog, ImportPeopleDialog } from "@/components/people/add-people"
 import { PostsSheet } from "@/components/people/posts-sheet"
 import { Pill, type PillTone } from "@/components/status"
@@ -102,6 +103,8 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [adding, setAdding] = useState<"one" | "csv" | null>(null)
   const [busy, setBusy] = useState("")
   const [reading, setReading] = useState<Stakeholder | null>(null)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
 
   const list = people.data ?? []
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
@@ -125,12 +128,16 @@ function PeopleList({ wsId }: { wsId: string }) {
         (status === "lead" ? !!s.leadId : status === "revealed" ? !!s.revealedAt : !s.revealedAt)) &&
       (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
   )
+  // One page of the filtered people; a filter that shrinks the list past this page shows its last page.
+  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
+  const current = Math.min(page, pages)
+  const shown = visible.slice((current - 1) * pageSize, current * pageSize)
   const picked = list.filter((s) => selected.has(s.id))
   // People who already have an email (from the LinkedIn email search) aren't revealed again: that would spend a credit.
   const toReveal = picked.filter((s) => !s.revealedAt && !s.email)
   const toAdd = picked.filter(canBeLead)
   const withLead = picked.filter((s) => s.leadId)
-  const allChecked = visible.length > 0 && visible.every((s) => selected.has(s.id))
+  const allChecked = shown.length > 0 && shown.every((s) => selected.has(s.id))
 
   const toggle = (id: string, on: boolean) =>
     setSelected((set) => {
@@ -212,10 +219,19 @@ function PeopleList({ wsId }: { wsId: string }) {
             placeholder="Search name, title or company"
             className="pl-8"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setPage(1)
+            }}
           />
         </div>
-        <Select value={foundBy} onValueChange={setFoundBy}>
+        <Select
+          value={foundBy}
+          onValueChange={(v) => {
+            setFoundBy(v)
+            setPage(1)
+          }}
+        >
           <SelectTrigger aria-label="Filter by how they were found" className="w-52!">
             <SelectValue />
           </SelectTrigger>
@@ -231,7 +247,13 @@ function PeopleList({ wsId }: { wsId: string }) {
             ))}
           </SelectContent>
         </Select>
-        <Select value={status} onValueChange={setStatus}>
+        <Select
+          value={status}
+          onValueChange={(v) => {
+            setStatus(v)
+            setPage(1)
+          }}
+        >
           <SelectTrigger aria-label="Filter by status" className="w-44!">
             <SelectValue />
           </SelectTrigger>
@@ -325,12 +347,12 @@ function PeopleList({ wsId }: { wsId: string }) {
               <TableRow>
                 <TableHead className="w-10">
                   <Checkbox
-                    aria-label="Select all shown"
+                    aria-label="Select this page"
                     checked={allChecked}
                     onCheckedChange={(v) =>
                       setSelected((set) => {
                         const next = new Set(set)
-                        visible.forEach((s) => (v === true ? next.add(s.id) : next.delete(s.id)))
+                        shown.forEach((s) => (v === true ? next.add(s.id) : next.delete(s.id)))
                         return next
                       })
                     }
@@ -345,7 +367,7 @@ function PeopleList({ wsId }: { wsId: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.map((s) => {
+              {shown.map((s) => {
                 const cell = emailCell(s)
                 const leadPosts = s.leadId ? (postsByLead.get(s.leadId) ?? []) : []
                 return (
@@ -415,6 +437,18 @@ function PeopleList({ wsId }: { wsId: string }) {
               })}
             </TableBody>
           </Table>
+          <div className="border-t px-3 py-2">
+            <Pager
+              page={current}
+              pageSize={pageSize}
+              total={visible.length}
+              onPage={setPage}
+              onPageSize={(n) => {
+                setPageSize(n)
+                setPage(1)
+              }}
+            />
+          </div>
         </div>
       )}
 
