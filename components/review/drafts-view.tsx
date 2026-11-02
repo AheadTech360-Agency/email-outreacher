@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { type EmailDraft, type EmailStatus, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
+import { confirmKind, confirmNote, needsConfirm } from "@/lib/email-status"
 import { formatUsd, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -41,10 +42,8 @@ const STATUS: Record<EmailStatus, { label: string; tone: PillTone }> = {
 const name = (d: EmailDraft) => `${d.lead.firstName} ${d.lead.lastName}`.trim() || d.lead.email || "Unnamed lead"
 const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 
-/** A catch-all domain accepts any address, so the email check can't confirm it: it may bounce. */
-const isRisky = (d: EmailDraft) => d.lead.emailStatus === "risky"
-const RISKY_NOTE =
-  "Their company's mail server accepts any address, so the email check couldn't confirm this one. It may bounce, and bounces hurt your sending reputation."
+/** A risky address (may bounce) or a website one (orders@, a shared inbox): queued only once confirmed on its own. */
+const isRisky = (d: EmailDraft) => needsConfirm(d.lead.emailStatus)
 
 /** Put approved emails into their ICP's CheapSequencer campaign; says what was skipped and why. `riskyOk` are the
  * risky addresses a person confirmed; other risky ones are left out. */
@@ -152,11 +151,17 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
         {risky.length > 0 && (
           <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
             <p>
-              {risky.length === 1 ? "1 goes" : `${risky.length} go`} to a risky address ({risky.map(name).join(", ")}). {RISKY_NOTE}
+              {risky.length === 1 ? "1 needs" : `${risky.length} need`} your OK first:{" "}
+              {risky.map((d) => `${name(d)} (${confirmKind(d.lead.emailStatus)})`).join(", ")}.
             </p>
+            {[...new Set(risky.map((d) => d.lead.emailStatus))].map((s) => (
+              <p key={s} className="text-xs">
+                {confirmNote(s)}
+              </p>
+            ))}
             <label className="flex cursor-pointer items-center gap-2">
               <input type="checkbox" checked={includeRisky} onChange={(e) => setIncludeRisky(e.target.checked)} />
-              Queue the risky {risky.length === 1 ? "one" : "ones"} too
+              Queue {risky.length === 1 ? "it" : "them"} too
             </label>
           </div>
         )}
@@ -344,8 +349,8 @@ function DraftSheet({
               <ConfirmDialog
                 open={confirmRisky}
                 onOpenChange={setConfirmRisky}
-                title="Queue it to a risky address?"
-                description={`${draft.lead.email}: ${RISKY_NOTE}`}
+                title={`Queue it to a ${confirmKind(draft.lead.emailStatus)}?`}
+                description={`${draft.lead.email}: ${confirmNote(draft.lead.emailStatus)}`}
                 confirmLabel="Queue it anyway"
                 onConfirm={async () => {
                   setConfirmRisky(false)

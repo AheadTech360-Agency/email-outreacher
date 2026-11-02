@@ -24,6 +24,7 @@ import {
   updateEmail,
   useApi,
 } from "@/lib/api"
+import { confirmKind, confirmNote, needsConfirm } from "@/lib/email-status"
 import { formatUsd, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -49,10 +50,15 @@ const DRAFT: Record<string, { label: string; tone: PillTone }> = {
   sent: { label: "Sent", tone: "neutral" },
   skipped: { label: "Skipped", tone: "neutral" },
 }
-const RISKY_NOTE = "Their company's mail server accepts any address, so the email check couldn't confirm it. It may bounce."
 
 const emailPill = (status: string | null): { label: string; tone: PillTone } =>
-  status === "valid" ? { label: "Valid email", tone: "positive" } : status === "risky" ? { label: "Risky email", tone: "warning" } : { label: status ? `Email: ${status}` : "No email", tone: "neutral" }
+  status === "valid"
+    ? { label: "Valid email", tone: "positive" }
+    : status === "risky"
+      ? { label: "Risky email", tone: "warning" }
+      : status === "website"
+        ? { label: "Website email", tone: "warning" }
+        : { label: status ? `Email: ${status}` : "No email", tone: "neutral" }
 
 export default function QuickstartRunPage() {
   const { id } = useParams<{ id: string }>()
@@ -176,7 +182,7 @@ function Summary({ run }: { run: QuickstartDetail }) {
       label: "Leads",
       value: l.length,
       unit: "leads",
-      rest: `${l.filter((x) => x.emailStatus === "valid" || x.emailStatus === "website").length} valid emails · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
+      rest: `${l.filter((x) => x.emailStatus === "valid").length} valid · ${l.filter((x) => x.emailStatus === "website").length} from websites · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
     },
     {
       label: "Emails",
@@ -267,8 +273,8 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
   const drafts = run.drafts
   const toReview = drafts.filter((d) => d.status === "draft" || d.status === "edited")
   const approved = drafts.filter((d) => d.status === "approved")
-  const risky = approved.filter((d) => d.emailStatus === "risky")
-  const safeToApprove = toReview.filter((d) => d.email && d.emailStatus !== "risky")
+  const risky = approved.filter((d) => needsConfirm(d.emailStatus))
+  const safeToApprove = toReview.filter((d) => d.email && !needsConfirm(d.emailStatus))
 
   const setStatus = async (ids: string[], status: "approved" | "skipped" | "draft") => {
     setBusy(ids.length === 1 ? ids[0] : "all")
@@ -280,7 +286,7 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
   }
 
   const queue = async () => {
-    const ids = approved.filter((d) => includeRisky || d.emailStatus !== "risky").map((d) => d.id)
+    const ids = approved.filter((d) => includeRisky || !needsConfirm(d.emailStatus)).map((d) => d.id)
     if (!ids.length) return
     setBusy("queue")
     try {
@@ -361,7 +367,7 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
                   <div className="mt-3 space-y-2 pl-6">
                     <p className="text-xs text-muted-foreground">
                       To {d.email ?? "no email address"}
-                      {d.emailStatus === "risky" && ` · ${RISKY_NOTE}`}
+                      {needsConfirm(d.emailStatus) && ` · ${confirmNote(d.emailStatus)}`}
                     </p>
                     <p className="text-sm font-medium">{d.subject}</p>
                     <p className="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">{d.body}</p>
@@ -393,11 +399,17 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
         {risky.length > 0 && (
           <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
             <p>
-              {risky.length === 1 ? "1 goes" : `${risky.length} go`} to a risky address ({risky.map((d) => d.leadName).join(", ")}). {RISKY_NOTE}
+              {risky.length === 1 ? "1 needs" : `${risky.length} need`} your OK first:{" "}
+              {risky.map((d) => `${d.leadName} (${confirmKind(d.emailStatus)})`).join(", ")}.
             </p>
+            {[...new Set(risky.map((d) => d.emailStatus))].map((s) => (
+              <p key={s} className="text-xs">
+                {confirmNote(s)}
+              </p>
+            ))}
             <label className="flex cursor-pointer items-center gap-2">
               <input type="checkbox" checked={includeRisky} onChange={(e) => setIncludeRisky(e.target.checked)} />
-              Queue the risky {risky.length === 1 ? "one" : "ones"} too
+              Queue {risky.length === 1 ? "it" : "them"} too
             </label>
           </div>
         )}
@@ -443,7 +455,8 @@ function Leads({ run }: { run: QuickstartDetail }) {
       <summary className="cursor-pointer px-4 py-3 text-base font-semibold">
         Leads ({run.leads.length})
         <span className="ml-2 text-sm font-normal text-muted-foreground">
-          {run.leads.filter((l) => l.emailStatus === "valid" || l.emailStatus === "website").length} valid, {run.leads.filter((l) => l.emailStatus === "risky").length} risky
+          {run.leads.filter((l) => l.emailStatus === "valid").length} valid, {run.leads.filter((l) => l.emailStatus === "website").length} from websites,{" "}
+          {run.leads.filter((l) => l.emailStatus === "risky").length} risky
         </span>
       </summary>
       <div className="divide-y divide-rule border-t">

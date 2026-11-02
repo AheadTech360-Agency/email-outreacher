@@ -86,6 +86,7 @@ export const FLAG_LABEL: Record<GenerationFlag, string> = {
   no_hook: "No hook",
   not_scored: "Not scored",
   risky_email: "Risky email address",
+  website_email: "Website address (orders@, info@): needs its own OK",
 }
 
 /** A flag's label, or the flag itself when it's one this list doesn't know yet. */
