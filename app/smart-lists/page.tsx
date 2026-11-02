@@ -22,7 +22,7 @@ import {
 import { formatUsd } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-const SORT_LIMIT = 200
+const SORT_LIMIT = 2000
 
 export default function SmartListsPage() {
   return (
