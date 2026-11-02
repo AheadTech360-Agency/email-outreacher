@@ -47,6 +47,7 @@ function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
   if (s.email && !s.revealedAt) {
     if (s.emailStatus === "valid") return { text: "Valid email", tone: "positive" }
     if (s.emailStatus === "risky") return { text: "Risky email", tone: "warning" }
+    if (s.emailStatus === "website") return { text: "Email from their website", tone: "positive" }
     return { text: s.emailStatus ? `Email (${s.emailStatus})` : "Has email", tone: "info" }
   }
   if (!s.revealedAt) {

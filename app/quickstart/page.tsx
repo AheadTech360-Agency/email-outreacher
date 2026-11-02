@@ -216,7 +216,7 @@ function NewRun({ wsId }: { wsId: string }) {
               : "Each finds up to 20 businesses.",
             num("requests") < requestsNeeded,
           )}
-          {number("companies", "Companies to verify", "Website, Instagram and fit score.")}
+          {number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
           {number("people", "People per company", "Found on LinkedIn.")}
           {number("leads", "Most leads", "People who get an email.")}
           {number("posts", "Posts per lead", "0 writes without posts.")}

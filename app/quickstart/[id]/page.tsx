@@ -176,7 +176,7 @@ function Summary({ run }: { run: QuickstartDetail }) {
       label: "Leads",
       value: l.length,
       unit: "leads",
-      rest: `${l.filter((x) => x.emailStatus === "valid").length} valid emails · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
+      rest: `${l.filter((x) => x.emailStatus === "valid" || x.emailStatus === "website").length} valid emails · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
     },
     {
       label: "Emails",
@@ -443,7 +443,7 @@ function Leads({ run }: { run: QuickstartDetail }) {
       <summary className="cursor-pointer px-4 py-3 text-base font-semibold">
         Leads ({run.leads.length})
         <span className="ml-2 text-sm font-normal text-muted-foreground">
-          {run.leads.filter((l) => l.emailStatus === "valid").length} valid, {run.leads.filter((l) => l.emailStatus === "risky").length} risky
+          {run.leads.filter((l) => l.emailStatus === "valid" || l.emailStatus === "website").length} valid, {run.leads.filter((l) => l.emailStatus === "risky").length} risky
         </span>
       </summary>
       <div className="divide-y divide-rule border-t">
