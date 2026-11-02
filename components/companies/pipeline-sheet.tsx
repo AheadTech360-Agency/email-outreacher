@@ -4,13 +4,13 @@ import { useState, type ReactNode } from "react"
 import { AtSign, Ban, Check, ContactRound, ExternalLink, Globe, Sparkles, UserSearch, X } from "lucide-react"
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
+import { ManagerOnly } from "@/components/manager-only"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { type PipelineCompany, fetchCompanyContent, fetchCompanyDetail, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { compactCount, shortDate } from "@/lib/format"
-import { ManagerOnly } from "@/components/manager-only"
 
 const RULE_SOURCE: Record<string, string> = {
   business_name: "business name",

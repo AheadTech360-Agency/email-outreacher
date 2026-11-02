@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
 import { FeedbackControl, TAG_LABEL } from "@/components/feedback/feedback-control"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { Pill } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -29,7 +30,6 @@ import {
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
-import { ManagerOnly } from "@/components/manager-only"
 
 const MIN_RATED = 3
 const FILTERS = [

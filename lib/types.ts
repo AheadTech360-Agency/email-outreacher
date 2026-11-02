@@ -192,6 +192,7 @@ export type GenerationFlag =
   | "thin_material"
   | "no_hook"
   | "not_scored"
+  | "risky_email"
 
 export interface Settings {
   defaultModel: string

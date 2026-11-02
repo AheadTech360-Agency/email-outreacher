@@ -5,6 +5,7 @@ import { AlertTriangle, Mails, RotateCw, Search, Sparkles, Wand2 } from "lucide-
 import { toast } from "sonner"
 import { BackendError } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { Pill, type PillTone } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -15,7 +16,6 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type Mailbox, type Mailboxes, fetchMailboxes, fetchSendingCampaigns, runFollowUps, syncCampaigns, useApi } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
-import { ManagerOnly } from "@/components/manager-only"
 
 const WARMUP_LABEL: Record<string, { label: string; tone: PillTone }> = {
   warming: { label: "Warming up", tone: "info" },

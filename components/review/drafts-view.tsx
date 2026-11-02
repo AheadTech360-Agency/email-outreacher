@@ -8,6 +8,7 @@ import { BackendError, WorkspaceGate } from "@/components/companies/backend-stat
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { FeedbackControl } from "@/components/feedback/feedback-control"
+import { ManagerOnly } from "@/components/manager-only"
 import { Pill, type PillTone } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
@@ -19,7 +20,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { type EmailDraft, type EmailStatus, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ManagerOnly } from "@/components/manager-only"
 
 const FILTERS: { value: string; label: string; test: (s: EmailStatus) => boolean }[] = [
   { value: "review", label: "To review", test: (s) => s === "draft" || s === "edited" },
@@ -41,11 +41,17 @@ const STATUS: Record<EmailStatus, { label: string; tone: PillTone }> = {
 const name = (d: EmailDraft) => `${d.lead.firstName} ${d.lead.lastName}`.trim() || d.lead.email || "Unnamed lead"
 const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 
-/** Put approved emails into their ICP's CheapSequencer campaign; says what was skipped and why. */
-async function queue(wsId: string, ids: string[]) {
+/** A catch-all domain accepts any address, so the email check can't confirm it: it may bounce. */
+const isRisky = (d: EmailDraft) => d.lead.emailStatus === "risky"
+const RISKY_NOTE =
+  "Their company's mail server accepts any address, so the email check couldn't confirm this one. It may bounce, and bounces hurt your sending reputation."
+
+/** Put approved emails into their ICP's CheapSequencer campaign; says what was skipped and why. `riskyOk` are the
+ * risky addresses a person confirmed; other risky ones are left out. */
+async function queue(wsId: string, ids: string[], riskyOk: string[] = []) {
   const id = toast.loading(`Queueing ${ids.length} email${ids.length === 1 ? "" : "s"}…`)
   try {
-    const r = await queueEmails(wsId, ids)
+    const r = await queueEmails(wsId, ids, riskyOk)
     const skipped = r.results.filter((x) => x.status === "skipped")
     const reasons = [...new Set(skipped.map((x) => x.reason))].slice(0, 3).join(" ")
     if (r.queued)
@@ -72,6 +78,8 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [queueing, setQueueing] = useState(false)
+  // Risky addresses are queued only when ticked in the confirm dialog: each batch of them is its own decision.
+  const [includeRisky, setIncludeRisky] = useState(false)
 
   if (emails.error && !emails.data) return <BackendError message={emails.error} onRetry={emails.reload} />
   if (!emails.data) return <TableSkeleton rows={6} />
@@ -80,10 +88,13 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
   const visible = list.filter((d) => FILTERS.find((f) => f.value === filter)!.test(d.status))
   const open = list.find((d) => d.id === openId) ?? null
   const approved = list.filter((d) => d.status === "approved")
+  const risky = approved.filter(isRisky)
+  const toQueue = includeRisky ? approved.length : approved.length - risky.length
 
   const queueApproved = async () => {
     setQueueing(true)
-    if (await queue(wsId, approved.map((d) => d.id))) emails.reload()
+    const ids = approved.filter((d) => includeRisky || !isRisky(d)).map((d) => d.id)
+    if (ids.length && (await queue(wsId, ids, includeRisky ? risky.map((d) => d.id) : []))) emails.reload()
     setQueueing(false)
   }
 
@@ -130,14 +141,26 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
-        title={`Queue ${approved.length} approved email${approved.length === 1 ? "" : "s"}?`}
+        title={`Queue ${toQueue} approved email${toQueue === 1 ? "" : "s"}?`}
         description="Each lead goes into their ICP's campaign in CheapSequencer, with generic follow-ups that Coldbrew personalizes just before they're due. Nothing sends until you activate the campaign in CheapSequencer. Queued emails can't be edited here."
         confirmLabel="Queue them"
         onConfirm={() => {
           setConfirming(false)
           void queueApproved()
         }}
-      />
+      >
+        {risky.length > 0 && (
+          <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+            <p>
+              {risky.length === 1 ? "1 goes" : `${risky.length} go`} to a risky address ({risky.map(name).join(", ")}). {RISKY_NOTE}
+            </p>
+            <label className="flex cursor-pointer items-center gap-2">
+              <input type="checkbox" checked={includeRisky} onChange={(e) => setIncludeRisky(e.target.checked)} />
+              Queue the risky {risky.length === 1 ? "one" : "ones"} too
+            </label>
+          </div>
+        )}
+      </ConfirmDialog>
 
       {visible.length === 0 ? (
         <EmptyState icon={Inbox} title="Nothing here" description="Try another filter." />
@@ -216,6 +239,7 @@ function DraftSheet({
   const [body, setBody] = useState(draft.body)
   const [instruction, setInstruction] = useState("")
   const [busy, setBusy] = useState("")
+  const [confirmRisky, setConfirmRisky] = useState(false)
   const dirty = subject.trim() !== draft.subject || body.trim() !== draft.body
   // Once queued, the text is in CheapSequencer, so it's no longer edited here.
   const sent = draft.status === "sent" || draft.status === "queued"
@@ -308,6 +332,7 @@ function DraftSheet({
                   variant="outline"
                   disabled={!!busy}
                   onClick={async () => {
+                    if (isRisky(draft)) return setConfirmRisky(true)
                     setBusy("queue")
                     if (await queue(wsId, [draft.id])) onChanged()
                     setBusy("")
@@ -316,6 +341,19 @@ function DraftSheet({
                   <Send /> Queue for sending
                 </Button>
               )}
+              <ConfirmDialog
+                open={confirmRisky}
+                onOpenChange={setConfirmRisky}
+                title="Queue it to a risky address?"
+                description={`${draft.lead.email}: ${RISKY_NOTE}`}
+                confirmLabel="Queue it anyway"
+                onConfirm={async () => {
+                  setConfirmRisky(false)
+                  setBusy("queue")
+                  if (await queue(wsId, [draft.id], [draft.id])) onChanged()
+                  setBusy("")
+                }}
+              />
             </div>
           )}
           <p className="text-xs text-muted-foreground">

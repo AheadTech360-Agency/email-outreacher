@@ -8,6 +8,7 @@ import { BackendError } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { LeadsTable } from "@/components/leads-table"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { EnrichDialog, GenerateDialog } from "@/components/run-dialogs"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -26,7 +27,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { LEAD_STATUS_LABEL, SOURCE_LABEL, fullName, leadSources } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { LEAD_STATUSES, SOURCES } from "@/lib/types"
-import { ManagerOnly } from "@/components/manager-only"
 
 export default function LeadsPage() {
   const { leads, leadsStatus, leadsError, reloadLeads, icps, moveLeads, deleteLeads } = useStore()

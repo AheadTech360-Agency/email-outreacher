@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { AddPersonDialog, ImportPeopleDialog } from "@/components/people/add-people"
 import { PostsSheet } from "@/components/people/posts-sheet"
@@ -35,7 +36,6 @@ import {
 } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
-import { ManagerOnly } from "@/components/manager-only"
 
 const MAX_REVEAL = 25
 const MAX_FETCH = 25

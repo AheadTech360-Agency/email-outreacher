@@ -5,6 +5,7 @@ import { Search, Sparkles, Users, Wand2 } from "lucide-react"
 import { AddLeadsMenu } from "@/components/add-leads"
 import { EmptyState } from "@/components/empty-state"
 import { LeadsTable } from "@/components/leads-table"
+import { ManagerOnly } from "@/components/manager-only"
 import { EnrichDialog, GenerateDialog } from "@/components/run-dialogs"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,6 @@ import { LEAD_STATUS_LABEL, fullName } from "@/lib/format"
 import { ENRICHABLE, GENERATABLE } from "@/lib/selectors"
 import { useStore } from "@/lib/store"
 import { LEAD_STATUSES } from "@/lib/types"
-import { ManagerOnly } from "@/components/manager-only"
 
 export default function IcpLeadsPage() {
   const icp = useIcpParam()

@@ -7,6 +7,7 @@ import { Copy, FileText, MoreHorizontal, PencilLine, Plus, Trash2 } from "lucide
 import { toast } from "sonner"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Badge } from "@/components/ui/badge"
@@ -23,7 +24,6 @@ import { shortDate } from "@/lib/format"
 import { FOLLOWUP_KINDS, ICP_PROMPT_FIELD, type IcpPromptKind, icpsUsingTemplate, isIcpPromptKind, resolveScoringTemplate } from "@/lib/selectors"
 import { useStore } from "@/lib/store"
 import type { PromptKind, PromptTemplate } from "@/lib/types"
-import { ManagerOnly } from "@/components/manager-only"
 
 const SECTIONS: { kind: PromptKind; title: string; description: string }[] = [
   {

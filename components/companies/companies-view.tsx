@@ -12,6 +12,7 @@ import { LeadIntelImportDialog } from "@/components/companies/lead-intel-import-
 import { SourcePill, StatusPill } from "@/components/companies/pipeline-cells"
 import { PipelineSheet } from "@/components/companies/pipeline-sheet"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
@@ -32,7 +33,6 @@ import {
 } from "@/lib/api"
 import { formatUsd } from "@/lib/format"
 import { cn } from "@/lib/utils"
-import { ManagerOnly } from "@/components/manager-only"
 
 const MAX_RESEARCH = 10
 const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [

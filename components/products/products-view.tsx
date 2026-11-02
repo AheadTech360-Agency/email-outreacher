@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
@@ -26,7 +27,6 @@ import {
   useApi,
 } from "@/lib/api"
 import { shortDate } from "@/lib/format"
-import { ManagerOnly } from "@/components/manager-only"
 
 const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url">; label: string; hint: string; placeholder: string; rows: number }[] = [
   {

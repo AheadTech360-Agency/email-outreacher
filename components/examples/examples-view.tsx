@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { Pill } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -29,7 +30,6 @@ import {
   useApi,
 } from "@/lib/api"
 import { shortDate } from "@/lib/format"
-import { ManagerOnly } from "@/components/manager-only"
 
 const EMPTY: ExampleEmailFields = { subject: "", body: "", note: "", allIcps: false, icpIds: [] }
 

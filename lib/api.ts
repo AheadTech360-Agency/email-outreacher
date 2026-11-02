@@ -386,8 +386,9 @@ export interface QueueResult {
 }
 
 /** Put approved first emails into their ICP's campaign. Doesn't activate it or send. */
-export const queueEmails = (workspaceId: string, emailIds: string[]) =>
-  runJob<QueueResult>("/sending/queue", { workspaceId, body: { emailIds } })
+/** `riskyOk`: emails to risky addresses (catch-all domains) a person confirmed; any other risky one is left out. */
+export const queueEmails = (workspaceId: string, emailIds: string[], riskyOk: string[] = []) =>
+  runJob<QueueResult>("/sending/queue", { workspaceId, body: { emailIds, riskyOk } })
 
 export interface FollowUpRun {
   checked: number
@@ -924,6 +925,8 @@ export interface EmailDraft {
     title: string
     company: string
     email: string | null
+    /** valid | risky | ...: how sure the email check is. A risky address needs its own confirmation to queue. */
+    emailStatus: string | null
     linkedinUrl: string | null
   }
   status: EmailStatus

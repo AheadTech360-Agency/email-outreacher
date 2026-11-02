@@ -5,6 +5,7 @@ import { notFound, useParams, useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { ChevronLeft, Copy, Save, Star } from "lucide-react"
 import { toast } from "sonner"
+import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { OutputSchemaView } from "@/components/prompt/output-schema"
 import { PromptBody } from "@/components/prompt/prompt-body"
@@ -26,7 +27,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { KIND_LABEL } from "@/lib/prompt-starters"
 import { useStore, type VersionDraft } from "@/lib/store"
 import type { PromptTemplate, PromptVersion } from "@/lib/types"
-import { ManagerOnly } from "@/components/manager-only"
 
 export default function PromptEditorPage() {
   const { id } = useParams<{ id: string }>()
