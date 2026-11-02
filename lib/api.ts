@@ -748,7 +748,15 @@ export const setCompanyStatus = (workspaceId: string, companyId: string, status:
 
 export const findPipelineStakeholders = (
   workspaceId: string,
-  body: { companyIds: string[]; source: "apollo" | "linkedin"; titles: string[]; seniorities: string[]; maxPerCompany: number },
+  body: {
+    companyIds: string[]
+    source: "apollo" | "linkedin"
+    titles: string[]
+    seniorities: string[]
+    maxPerCompany: number
+    /** LinkedIn only: search for each person's work email too. */
+    findEmails?: boolean
+  },
 ) => runJob<StakeholderSearchResult & { costUsd: number | null }>("/pipeline/stakeholders", { workspaceId, body })
 
 // ---------- Usage: what Claude, Apollo and Apify have cost ----------

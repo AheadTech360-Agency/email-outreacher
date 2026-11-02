@@ -32,6 +32,7 @@ const LEAD_VARS = [
   "lead.linkedinUrl",
   "lead.instagramUrl",
   "lead.experience",
+  "lead.about",
 ]
 
 /** Posts, numbered once: {{items}} is all of them; the others are parts of it with the same numbers. */

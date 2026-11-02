@@ -26,7 +26,7 @@ const SENIORITIES: { value: string; label: string }[] = [
 
 const SOURCES = [
   { value: "apollo", label: "Apollo", hint: "Needs a paid Apollo plan. Searching uses no credits; revealing an email is about 1 credit." },
-  { value: "linkedin", label: "LinkedIn (Apify)", hint: "Full names and LinkedIn, no emails. $0.02 per company searched, plus about $0.003 per person." },
+  { value: "linkedin", label: "LinkedIn (Apify)", hint: "Names, titles, LinkedIn and work emails. $0.02 per company searched, plus about $0.012 per person." },
 ] as const
 
 const DEFAULT_TITLES = ["Owner", "Founder", "CEO", "President", "General Manager"]
@@ -35,6 +35,8 @@ const DEFAULT_SENIORITIES = ["owner", "founder", "c_suite"]
 // company, plus $0.003 per Basic profile.
 const LINKEDIN_COST_PER_COMPANY = 0.02
 const LINKEDIN_COST_PER_PERSON = 0.003
+// With the email search, which also returns the full profile: $12 per 1,000 people.
+const LINKEDIN_COST_PER_PERSON_WITH_EMAIL = 0.012
 
 type Result = StakeholderSearchResult & { costUsd?: number | null }
 
@@ -55,6 +57,7 @@ export function FindStakeholdersDialog({
   const [titles, setTitles] = useState(DEFAULT_TITLES)
   const [seniorities, setSeniorities] = useState(DEFAULT_SENIORITIES)
   const [perCompany, setPerCompany] = useState("10")
+  const [findEmails, setFindEmails] = useState(true)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [failure, setFailure] = useState("")
@@ -66,7 +69,8 @@ export function FindStakeholdersDialog({
   const tooMany = companies.length > limit
   const max = Number(perCompany)
   const badMax = linkedin && !(Number.isInteger(max) && max >= 1 && max <= 50)
-  const estimate = linkedin && !badMax ? companies.length * (LINKEDIN_COST_PER_COMPANY + max * LINKEDIN_COST_PER_PERSON) : 0
+  const perPerson = findEmails ? LINKEDIN_COST_PER_PERSON_WITH_EMAIL : LINKEDIN_COST_PER_PERSON
+  const estimate = linkedin && !badMax ? companies.length * (LINKEDIN_COST_PER_COMPANY + max * perPerson) : 0
 
   const run = async () => {
     setRunning(true)
@@ -78,6 +82,7 @@ export function FindStakeholdersDialog({
         titles,
         seniorities: linkedin ? [] : seniorities,
         maxPerCompany: linkedin ? max : 10,
+        findEmails: linkedin && findEmails,
       })
       setResult(r)
       if (r.results.some((x) => x.new > 0)) onDone()
@@ -194,6 +199,16 @@ export function FindStakeholdersDialog({
                 <p className={badMax ? "text-xs text-destructive" : "text-xs text-muted-foreground tabular-nums"}>
                   {badMax ? "Use a whole number from 1 to 50" : `Up to about ${formatUsd(estimate)} for this search.`}
                 </p>
+                <Label className="flex cursor-pointer items-start gap-2 pt-2 text-sm font-normal">
+                  <Checkbox checked={findEmails} onCheckedChange={(v) => setFindEmails(v === true)} className="mt-0.5" />
+                  <span>
+                    Find their work emails too
+                    <span className="block text-xs text-muted-foreground">
+                      Needed to send to them. Each email comes with a check: valid, or risky when the company accepts any
+                      address. Also brings their full profile (work history, about), which makes better emails.
+                    </span>
+                  </span>
+                </Label>
               </div>
             ) : (
               <fieldset className="space-y-1.5">

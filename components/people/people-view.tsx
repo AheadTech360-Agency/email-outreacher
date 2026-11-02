@@ -43,6 +43,12 @@ const MAX_FETCH = 25
 const COST_PER_POST = 0.0027
 
 function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
+  // Found by the LinkedIn email search: Apify's check says how sure it is.
+  if (s.email && !s.revealedAt) {
+    if (s.emailStatus === "valid") return { text: "Valid email", tone: "positive" }
+    if (s.emailStatus === "risky") return { text: "Risky email", tone: "warning" }
+    return { text: s.emailStatus ? `Email (${s.emailStatus})` : "Has email", tone: "info" }
+  }
   if (!s.revealedAt) {
     if (s.source === "apify_linkedin") return { text: "Not looked up", tone: "neutral" }
     return s.hasEmail ? { text: "Has email", tone: "info" } : { text: "No email on file", tone: "neutral" }
@@ -118,7 +124,8 @@ function PeopleList({ wsId }: { wsId: string }) {
       (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
   )
   const picked = list.filter((s) => selected.has(s.id))
-  const toReveal = picked.filter((s) => !s.revealedAt)
+  // People who already have an email (from the LinkedIn email search) aren't revealed again: that would spend a credit.
+  const toReveal = picked.filter((s) => !s.revealedAt && !s.email)
   const toAdd = picked.filter(canBeLead)
   const withLead = picked.filter((s) => s.leadId)
   const allChecked = visible.length > 0 && visible.every((s) => selected.has(s.id))
