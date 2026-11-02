@@ -28,6 +28,10 @@ import { LEAD_STATUS_LABEL, SOURCE_LABEL, fullName, leadSources } from "@/lib/fo
 import { useStore } from "@/lib/store"
 import { LEAD_STATUSES, SOURCES } from "@/lib/types"
 
+/** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
+const isVerified = (l: { email: string; emailStatus: string | null }) =>
+  !!l.email && ["verified", "valid"].includes((l.emailStatus ?? "").toLowerCase())
+
 export default function LeadsPage() {
   const { leads, leadsStatus, leadsError, reloadLeads, icps, moveLeads, deleteLeads } = useStore()
   const loading = leadsStatus === "loading"
@@ -38,6 +42,8 @@ export default function LeadsPage() {
   const [icpFilter, setIcpFilter] = useState("all")
   const [status, setStatus] = useState("all")
   const [source, setSource] = useState("all")
+  const [emailFilter, setEmailFilter] = useState("all")
+  const [removingNoEmail, setRemovingNoEmail] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState("")
@@ -52,10 +58,13 @@ export default function LeadsPage() {
       (status === "all" || l.status === status) &&
       (source === "all" ||
         (source === "none" ? sources.every((s) => s === "website") : sources.includes(source as (typeof SOURCES)[number]))) &&
+      (emailFilter === "all" || (emailFilter === "none" ? !l.email : emailFilter === "verified" ? isVerified(l) : !!l.email)) &&
       (!q || `${fullName(l)} ${l.email} ${l.company} ${l.title}`.toLowerCase().includes(q))
     )
   })
-  const filtered = query || icpFilter !== "all" || status !== "all" || source !== "all"
+  const filtered = query || icpFilter !== "all" || status !== "all" || source !== "all" || emailFilter !== "all"
+  const noEmail = leads.filter((l) => !l.email)
+  const allShownPicked = visible.length > 0 && visible.every((l) => selected.has(l.id))
   const ids = Array.from(selected)
   // Posts and emails follow an ICP's sources and prompts, so they run for leads of one ICP at a time.
   const selectedIcpIds = new Set(leads.filter((l) => selected.has(l.id)).map((l) => l.icpId))
@@ -67,6 +76,7 @@ export default function LeadsPage() {
     setIcpFilter("all")
     setStatus("all")
     setSource("all")
+    setEmailFilter("all")
   }
 
   return (
@@ -122,6 +132,25 @@ export default function LeadsPage() {
               <SelectItem value="none">No social profiles</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={emailFilter} onValueChange={setEmailFilter}>
+            <SelectTrigger aria-label="Filter by email" className="w-40!">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any email</SelectItem>
+              <SelectItem value="has">Has an email</SelectItem>
+              <SelectItem value="verified">Verified email</SelectItem>
+              <SelectItem value="none">No email</SelectItem>
+            </SelectContent>
+          </Select>
+          {visible.length > 0 && (
+            <Button
+              variant="ghost"
+              onClick={() => setSelected(allShownPicked ? new Set() : new Set(visible.map((l) => l.id)))}
+            >
+              {allShownPicked ? "Clear selection" : `Select all ${visible.length.toLocaleString()}${filtered ? " matching" : ""}`}
+            </Button>
+          )}
           <div className="ml-auto flex flex-wrap gap-2">
             <ManagerOnly><Button variant="outline" disabled={!runIcp} title={runHint} onClick={() => setRun("posts")}>
               <Sparkles /> Fetch posts{ids.length ? ` (${ids.length})` : ""}
@@ -138,6 +167,9 @@ export default function LeadsPage() {
               }}
             >
               <ArrowRightLeft /> Move{ids.length ? ` (${ids.length})` : ""}
+            </Button></ManagerOnly>
+            <ManagerOnly><Button variant="outline" disabled={noEmail.length === 0} onClick={() => setRemovingNoEmail(true)}>
+              <Trash2 /> Remove {noEmail.length.toLocaleString()} without email
             </Button></ManagerOnly>
             <ManagerOnly><Button variant="destructive" disabled={ids.length === 0} onClick={() => setDeleteOpen(true)}>
               <Trash2 /> Delete{ids.length ? ` (${ids.length})` : ""}
@@ -229,6 +261,24 @@ export default function LeadsPage() {
         </DialogContent>
       </Dialog>
 
+      <ConfirmDialog
+        open={removingNoEmail}
+        onOpenChange={setRemovingNoEmail}
+        destructive
+        title={`Remove ${noEmail.length.toLocaleString()} lead${noEmail.length === 1 ? "" : "s"} without an email?`}
+        description="Every lead with no email address, in every ICP. Their posts, hooks and drafts are deleted too; the people they came from stay on the People page, so you can reveal an email and add them again. This can't be undone."
+        confirmLabel={`Remove ${noEmail.length.toLocaleString()}`}
+        onConfirm={async () => {
+          const gone = noEmail.map((l) => l.id)
+          try {
+            for (let i = 0; i < gone.length; i += 1000) await deleteLeads(gone.slice(i, i + 1000))
+            setSelected((s) => new Set([...s].filter((id) => !gone.includes(id))))
+            toast.success(`Removed ${gone.length.toLocaleString()} lead${gone.length === 1 ? "" : "s"} without an email`)
+          } catch (e) {
+            toast.error("Couldn't remove them", { description: e instanceof Error ? e.message : undefined })
+          }
+        }}
+      />
       <ConfirmDialog
         open={deleteOpen}
         onOpenChange={setDeleteOpen}

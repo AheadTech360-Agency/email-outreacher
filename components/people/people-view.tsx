@@ -70,6 +70,9 @@ function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
   return { text: s.emailStatus ?? "Email", tone: s.emailStatus === "verified" ? "positive" : "warning" }
 }
 
+/** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
+const isVerified = (s: Stakeholder) => !!s.email && ["verified", "valid"].includes((s.emailStatus ?? "").toLowerCase())
+
 /** Unrevealed Apollo people only have a masked name and no contact, so they need revealing first. */
 const canBeLead = (s: Stakeholder) => !s.leadId && !!(s.linkedinUrl || s.email) && !(s.source === "apollo" && !s.revealedAt)
 
@@ -106,6 +109,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [query, setQuery] = useState("")
   const [foundBy, setFoundBy] = useState("all")
   const [status, setStatus] = useState("all")
+  const [emailFilter, setEmailFilter] = useState("all")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmingReveal, setConfirmingReveal] = useState(false)
   const [confirmingWrite, setConfirmingWrite] = useState(false)
@@ -136,6 +140,8 @@ function PeopleList({ wsId }: { wsId: string }) {
               : s.icpId === foundBy)) &&
       (status === "all" ||
         (status === "lead" ? !!s.leadId : status === "revealed" ? !!s.revealedAt : !s.revealedAt)) &&
+      (emailFilter === "all" ||
+        (emailFilter === "none" ? !s.email : emailFilter === "verified" ? isVerified(s) : !!s.email)) &&
       (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
   )
   // One page of the filtered people; a filter that shrinks the list past this page shows its last page.
@@ -148,6 +154,8 @@ function PeopleList({ wsId }: { wsId: string }) {
   const toAdd = picked.filter(canBeLead)
   const withLead = picked.filter((s) => s.leadId)
   const allChecked = shown.length > 0 && shown.every((s) => selected.has(s.id))
+  const allShownPicked = visible.length > 0 && visible.every((s) => selected.has(s.id))
+  const filtering = !!q || foundBy !== "all" || status !== "all" || emailFilter !== "all"
 
   const toggle = (id: string, on: boolean) =>
     setSelected((set) => {
@@ -285,6 +293,32 @@ function PeopleList({ wsId }: { wsId: string }) {
             <SelectItem value="lead">Leads</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={emailFilter}
+          onValueChange={(v) => {
+            setEmailFilter(v)
+            setPage(1)
+          }}
+        >
+          <SelectTrigger aria-label="Filter by email" className="w-40!">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Any email</SelectItem>
+            <SelectItem value="has">Has an email</SelectItem>
+            <SelectItem value="verified">Verified email</SelectItem>
+            <SelectItem value="none">No email</SelectItem>
+          </SelectContent>
+        </Select>
+        {visible.length > 0 && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setSelected(allShownPicked ? new Set() : new Set(visible.map((s) => s.id)))}
+          >
+            {allShownPicked ? "Clear selection" : `Select all ${visible.length.toLocaleString()}${filtering ? " matching" : ""}`}
+          </Button>
+        )}
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           <Button size="sm" variant="outline" onClick={() => setAdding("csv")}>
             <FileUp /> Import CSV
