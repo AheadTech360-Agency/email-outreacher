@@ -127,6 +127,7 @@ function NewRun({ wsId }: { wsId: string }) {
     !icp && "Pick an ICP",
     !terms.length && "Add a search term",
     !places.length && "Add a place",
+    !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
     !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
     !(num("companies") >= 1 && num("companies") <= 100) && "Companies to verify: 1 to 100",
     !(num("people") >= 1 && num("people") <= 10) && "People per company: 1 to 10",
@@ -206,7 +207,7 @@ function NewRun({ wsId }: { wsId: string }) {
       <div>
         <p className="mb-3 text-sm font-medium">3. How much of each step</p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {number("radius", "Radius (miles)", "Around each city. A state or country is searched in full.")}
+          {number("radius", "Radius (miles)", "1 to 50, around each city. A state or country is searched in full.")}
           {number(
             "requests",
             "Google requests",

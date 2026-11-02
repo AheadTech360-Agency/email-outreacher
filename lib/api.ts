@@ -64,7 +64,7 @@ export async function api<T>(
   if (res.status === 401) void supabase.auth.signOut()
   if (!res.ok) {
     const detail = await res.json().then((b) => b?.detail).catch(() => null)
-    throw new ApiError(typeof detail === "string" ? detail : `The backend answered ${res.status}.`, res.status)
+    throw new ApiError(typeof detail === "string" ? detail : (validation(detail) ?? `The backend answered ${res.status}.`), res.status)
   }
   return res.json() as Promise<T>
 }
@@ -1350,3 +1350,15 @@ export const stopQuickstart = (workspaceId: string, runId: string) =>
 
 export const resumeQuickstart = (workspaceId: string, runId: string) =>
   api<QuickstartRun>(`/quickstart/runs/${runId}/resume`, { workspaceId, method: "POST" })
+
+// A 422 from a field check: FastAPI lists each field and what's wrong with it, e.g.
+// [{ loc: ["body", "radiusMiles"], msg: "Input should be less than or equal to 50" }].
+function validation(detail: unknown): string | null {
+  if (!Array.isArray(detail) || !detail.length) return null
+  return detail
+    .map((d: { loc?: unknown[]; msg?: string }) => {
+      const name = String(d.loc?.at(-1) ?? "").replace(/([A-Z])/g, " $1").toLowerCase()
+      return `${name ? name[0].toUpperCase() + name.slice(1) + ": " : ""}${(d.msg ?? "").replace(/^Input should be /, "should be ")}`
+    })
+    .join(". ")
+}
