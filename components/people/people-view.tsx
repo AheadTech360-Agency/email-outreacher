@@ -40,7 +40,16 @@ import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 
 const MAX_REVEAL = 25
-const MAX_FETCH = 25
+// Posts and emails run 25 leads to a job (the server's limit); a bigger selection runs as several, one after another.
+const BATCH = 25
+const MAX_LEADS = 200
+const COST_PER_EMAIL = 0.003 // hook, email and score on Haiku
+
+function chunks<T>(items: T[], size = BATCH): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
 // Apify: about $2 per 1,000 LinkedIn posts and up to $2.70 per 1,000 Instagram posts.
 const COST_PER_POST = 0.0027
 
@@ -99,6 +108,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [status, setStatus] = useState("all")
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmingReveal, setConfirmingReveal] = useState(false)
+  const [confirmingWrite, setConfirmingWrite] = useState(false)
   const [fetchingPosts, setFetchingPosts] = useState(false)
   const [adding, setAdding] = useState<"one" | "csv" | null>(null)
   const [busy, setBusy] = useState("")
@@ -173,18 +183,29 @@ function PeopleList({ wsId }: { wsId: string }) {
   // Hook selection then email generation for each lead, on its ICP's prompts. Drafts go to Review.
   const writeEmails = async () => {
     setBusy("write")
-    const id = toast.loading(`Writing ${withLead.length} ${withLead.length === 1 ? "email" : "emails"}… this can take a minute`)
+    const ids = withLead.map((s) => s.leadId!)
+    const id = toast.loading(`Writing ${ids.length} ${ids.length === 1 ? "email" : "emails"}… this can take a few minutes`)
+    let drafted = 0
+    let cost = 0
+    const problems: { reason?: string | null }[] = []
     try {
-      const r = await generateEmails(wsId, withLead.map((s) => s.leadId!))
-      const problems = r.results.filter((x) => x.status !== "drafted")
+      const groups = chunks(ids)
+      for (const [i, group] of groups.entries()) {
+        if (groups.length > 1) toast.loading(`Writing emails: ${i * BATCH} of ${ids.length} done…`, { id })
+        const r = await generateEmails(wsId, group)
+        drafted += r.drafted
+        cost += r.costUsd ?? 0
+        problems.push(...r.results.filter((x) => x.status !== "drafted"))
+      }
       const reasons = [...new Set(problems.map((x) => x.reason).filter(Boolean))]
-      const summary = `${r.drafted} drafted${problems.length ? `, ${problems.length} not` : ""}`
-      const description = [r.costUsd ? `Claude cost ${formatUsd(r.costUsd)}.` : "", ...reasons].filter(Boolean).join(" ") || undefined
-      if (r.drafted) toast.success(summary, { id, description, action: { label: "Review", onClick: () => router.push("/review") } })
+      const summary = `${drafted} drafted${problems.length ? `, ${problems.length} not` : ""}`
+      const description = [cost ? `Claude cost ${formatUsd(cost)}.` : "", ...reasons].filter(Boolean).join(" ") || undefined
+      if (drafted) toast.success(summary, { id, description, action: { label: "Review", onClick: () => router.push("/review") } })
       else toast.error(summary, { id, description })
       setSelected(new Set())
     } catch (e) {
-      toast.error("Couldn't write them", { id, description: e instanceof Error ? e.message : undefined })
+      // What was written before the failure is kept in Review.
+      toast.error(drafted ? `Stopped after ${drafted} drafted` : "Couldn't write them", { id, description: e instanceof Error ? e.message : undefined })
     } finally {
       setBusy("")
     }
@@ -292,8 +313,8 @@ function PeopleList({ wsId }: { wsId: string }) {
             <ManagerOnly><Button
               size="sm"
               variant="outline"
-              disabled={!withLead.length || withLead.length > MAX_FETCH || !!busy}
-              title={withLead.length > MAX_FETCH ? `Fetch posts for up to ${MAX_FETCH} leads at a time` : undefined}
+              disabled={!withLead.length || withLead.length > MAX_LEADS || !!busy}
+              title={withLead.length > MAX_LEADS ? `Fetch posts for up to ${MAX_LEADS} leads at a time` : undefined}
               onClick={() => setFetchingPosts(true)}
             >
               <Newspaper /> Fetch posts for {withLead.length}
@@ -301,9 +322,9 @@ function PeopleList({ wsId }: { wsId: string }) {
             <ManagerOnly><Button
               size="sm"
               variant="outline"
-              disabled={!withLead.length || withLead.length > MAX_FETCH || !!busy}
-              title={withLead.length > MAX_FETCH ? `Write emails for up to ${MAX_FETCH} leads at a time` : undefined}
-              onClick={() => void writeEmails()}
+              disabled={!withLead.length || withLead.length > MAX_LEADS || !!busy}
+              title={withLead.length > MAX_LEADS ? `Write emails for up to ${MAX_LEADS} leads at a time` : undefined}
+              onClick={() => (withLead.length > BATCH ? setConfirmingWrite(true) : void writeEmails())}
             >
               <Sparkles /> {busy === "write" ? "Writing…" : `Write emails for ${withLead.length}`}
             </Button></ManagerOnly>
@@ -485,6 +506,17 @@ function PeopleList({ wsId }: { wsId: string }) {
         confirmLabel={`Reveal ${toReveal.length}`}
         onConfirm={() => void reveal()}
       />
+      <ConfirmDialog
+        open={confirmingWrite}
+        onOpenChange={setConfirmingWrite}
+        title={`Write ${withLead.length} emails?`}
+        description={`Claude writes one email for each, ${BATCH} at a time. About ${formatUsd(withLead.length * COST_PER_EMAIL)} in all, logged on Usage. Drafts wait in Review; nothing is sent.`}
+        confirmLabel={`Write ${withLead.length}`}
+        onConfirm={() => {
+          setConfirmingWrite(false)
+          void writeEmails()
+        }}
+      />
     </>
   )
 }
@@ -510,25 +542,39 @@ function FetchPostsDialog({
   // Each lead can have a LinkedIn and an Instagram source.
   const ceiling = people.length * n * 2 * COST_PER_POST
 
+  const [done, setDone] = useState(0)
+
   const run = async () => {
     setRunning(true)
+    let found = 0
+    let fresh = 0
+    let noSource = 0
+    let cost = 0
     try {
-      const r = await fetchLeadPosts(wsId, { leadIds: people.map((s) => s.leadId!), maxPosts: n, maxAgeDays: d })
-      const found = r.results.reduce((sum, x) => sum + (x.linkedin ?? 0) + (x.instagram ?? 0), 0)
-      const fresh = r.results.reduce((sum, x) => sum + x.new, 0)
-      const noSource = r.results.filter((x) => x.linkedin === null && x.instagram === null).length
-      if (r.error) toast.error("Apify refused", { description: r.error })
-      else
-        toast.success(`${found} ${found === 1 ? "post" : "posts"} found, ${fresh} new`, {
-          description:
-            [r.costUsd ? `Apify charged ${formatUsd(r.costUsd)}.` : "", noSource ? `${noSource} had no LinkedIn or Instagram to read.` : ""]
-              .filter(Boolean)
-              .join(" ") || undefined,
-        })
+      for (const [i, group] of chunks(people).entries()) {
+        setDone(i * BATCH)
+        const r = await fetchLeadPosts(wsId, { leadIds: group.map((s) => s.leadId!), maxPosts: n, maxAgeDays: d })
+        found += r.results.reduce((sum, x) => sum + (x.linkedin ?? 0) + (x.instagram ?? 0), 0)
+        fresh += r.results.reduce((sum, x) => sum + x.new, 0)
+        noSource += r.results.filter((x) => x.linkedin === null && x.instagram === null).length
+        cost += r.costUsd ?? 0
+        if (r.error) {
+          toast.error("Apify refused", { description: r.error })
+          onDone()
+          return onClose()
+        }
+      }
+      toast.success(`${found} ${found === 1 ? "post" : "posts"} found, ${fresh} new`, {
+        description:
+          [cost ? `Apify charged ${formatUsd(cost)}.` : "", noSource ? `${noSource} had no LinkedIn or Instagram to read.` : ""]
+            .filter(Boolean)
+            .join(" ") || undefined,
+      })
       onDone()
       onClose()
     } catch (e) {
       toast.error("Couldn't fetch posts", { description: e instanceof Error ? e.message : undefined })
+      onDone()
       setRunning(false)
     }
   }
@@ -570,7 +616,7 @@ function FetchPostsDialog({
             Cancel
           </Button>
           <Button type="submit" form="fetch-posts" disabled={running || bad}>
-            <Newspaper /> {running ? "Fetching… this can take a minute" : "Fetch posts"}
+            <Newspaper /> {running ? (people.length > BATCH ? `Fetching… ${done} of ${people.length} done` : "Fetching… this can take a minute") : "Fetch posts"}
           </Button>
         </DialogFooter>
       </DialogContent>
