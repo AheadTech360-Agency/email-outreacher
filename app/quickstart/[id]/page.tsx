@@ -3,10 +3,11 @@
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Check, ChevronDown, Circle, Loader2, Minus, Play, Send, Square, X } from "lucide-react"
+import { Check, ChevronDown, Circle, Loader2, Minus, Play, Rocket, Send, Square, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { RUN_STATUS } from "@/components/quickstart/run-status"
@@ -69,6 +70,21 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
     return () => clearInterval(timer)
   }, [live, reload])
 
+  if (run.error && !run.data && /not found/i.test(run.error))
+    return (
+      <div className="px-4 py-10 md:px-8">
+        <EmptyState
+          icon={Rocket}
+          title="This run doesn't exist"
+          description="It may belong to another workspace."
+          action={
+            <Button asChild variant="outline">
+              <Link href="/quickstart">Back to Quick Start</Link>
+            </Button>
+          }
+        />
+      </div>
+    )
   if (run.error && !run.data) return <BackendError message={run.error} onRetry={run.reload} />
   if (!run.data) return <TableSkeleton rows={6} />
   const r = run.data
