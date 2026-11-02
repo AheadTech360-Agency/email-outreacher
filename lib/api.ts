@@ -1394,6 +1394,10 @@ export interface SmartList {
 export interface SmartListDetail extends SmartList {
   companies: { id: string; name: string; domain: string | null; city: string | null; state: string | null; source: string; status: string; reason: string }[]
   people: { id: string; name: string; title: string; company: string | null; email: string | null; emailStatus: string | null; linkedinUrl: string | null; reason: string }[]
+  page: number
+  pageSize: number
+  /** Members matching the search (all of them without one). */
+  matching: number
 }
 
 export interface SortListsResult {
@@ -1412,7 +1416,21 @@ export interface SortListsResult {
 export const fetchSmartLists = (workspaceId: string, kind: SmartListKind) =>
   api<{ lists: SmartList[]; unsorted: number }>(`/smart-lists?kind=${kind}`, { workspaceId })
 
-export const fetchSmartList = (workspaceId: string, id: string) => api<SmartListDetail>(`/smart-lists/${id}`, { workspaceId })
+export const fetchSmartList = (workspaceId: string, id: string, page = 1, pageSize = 50, q = "") =>
+  api<SmartListDetail>(`/smart-lists/${id}?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(q)}`, { workspaceId })
+
+/** Move companies or people to an existing list, or a new one by name. */
+export const moveToSmartList = (
+  workspaceId: string,
+  kind: SmartListKind,
+  memberIds: string[],
+  to: { listId: string } | { newName: string },
+) =>
+  api<{ moved: number; toListId: string; toListName: string }>("/smart-lists/move", {
+    workspaceId,
+    method: "POST",
+    body: { kind, memberIds, ...("listId" in to ? { toListId: to.listId } : { newListName: to.newName }) },
+  })
 
 /** Sort companies or people not in a list yet (a background job: Claude, and a homepage read for a company not researched). */
 export const sortSmartLists = (workspaceId: string, kind: SmartListKind, limit: number) =>

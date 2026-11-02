@@ -71,7 +71,7 @@ function SortLine({ title, r }: { title: string; r: SortListsResult }) {
   const bits = [`${n(r.sorted)} sorted`]
   if (r.matchedIcp) bits.push(`${n(r.matchedIcp)} matched to an existing ICP`)
   if (r.newLists.length) bits.push(`new lists: ${r.newLists.join(", ")}`)
-  if (r.drafted.length) bits.push(`ICP drafted for: ${r.drafted.join(", ")}`)
+  if (r.drafted.length) bits.push(`ICP drafted for ${r.drafted.join(", ")}: review and create them on Smart lists`)
   if (r.duplicates) bits.push(`${n(r.duplicates)} duplicates joined their twin's list`)
   return (
     <li>

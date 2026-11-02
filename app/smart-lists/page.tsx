@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { Download, ListTree, Sparkles } from "lucide-react"
+import { useEffect, useState } from "react"
+import { ChevronLeft, ChevronRight, Download, ListTree, Search, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { WorkspaceGate } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
@@ -11,15 +11,19 @@ import { PageHeader } from "@/components/page-header"
 import { Pill } from "@/components/status"
 import { TagInput } from "@/components/tag-input"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
-  createIcpFromList, downloadCsv, draftSmartListIcp, fetchSmartList, fetchSmartLists, renameSmartList, sortSmartLists, useApi,
-  type SmartListDetail, type SmartListIcpDraft, type SmartListKind,
+  createIcpFromList, downloadCsv, draftSmartListIcp, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  useApi, type SmartList, type SmartListDetail, type SmartListIcpDraft, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
+import { useAuth } from "@/lib/auth"
 import { formatUsd } from "@/lib/format"
+import { canManage } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 const SORT_LIMIT = 2000
@@ -68,6 +72,29 @@ function SmartLists({ wsId }: { wsId: string }) {
   }
 
   const unsorted = lists.data?.unsorted ?? 0
+  const all = lists.data?.lists ?? []
+  // Company lists with no ICP yet: a draft waiting for you, or none drafted (never "Uncategorized").
+  const waiting = kind === "company" ? all.filter((l) => !l.leadIntelIcpId && l.icpDraft) : []
+  const undrafted = kind === "company" ? all.filter((l) => !l.leadIntelIcpId && !l.icpDraft && l.name !== "Uncategorized" && l.count > 0) : []
+  const [drafting, setDrafting] = useState(0)
+
+  const draftAll = async () => {
+    let done = 0
+    let failed = 0
+    for (const l of undrafted) {
+      setDrafting(++done)
+      try {
+        await draftSmartListIcp(wsId, l.id)
+      } catch {
+        failed += 1
+      }
+    }
+    setDrafting(0)
+    lists.reload()
+    if (failed) toast.error(`${failed} couldn't be drafted`)
+    else toast.success(`Drafted ICPs for ${undrafted.length} list${undrafted.length === 1 ? "" : "s"}`, { description: "Review each one and click Create ICP." })
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
@@ -104,9 +131,41 @@ function SmartLists({ wsId }: { wsId: string }) {
       </div>
       <p className="text-xs text-muted-foreground">
         Sorting uses Claude, about one call for every 25 {what}
-        {kind === "company" && ", and reads the homepage of a company that hasn't been verified yet (plain request first, Jina if that fails)"}
+        {kind === "company" && ", and reads the homepage of a company that hasn't been verified yet (plain request; sites that block it are skipped)"}
         . What it cost shows when it&apos;s done, and on Usage.
       </p>
+
+      {(waiting.length > 0 || undrafted.length > 0) && (
+        <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
+          {waiting.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="font-medium">
+                {waiting.length} {waiting.length === 1 ? "list has a draft ICP" : "lists have a draft ICP"} waiting for you to review and create
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {waiting.map((l) => (
+                  <Button key={l.id} size="sm" variant="outline" className="h-7" onClick={() => setOpenId(l.id)}>
+                    {l.name} ({l.count})
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+          {undrafted.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span>
+                No ICP drafted yet for {undrafted.map((l) => l.name).join(", ")}.
+              </span>
+              <ManagerOnly>
+                <Button size="sm" variant="outline" className="h-7" disabled={drafting > 0} onClick={() => void draftAll()}>
+                  <Sparkles /> {drafting ? `Drafting ${drafting} of ${undrafted.length}…` : `Draft ${undrafted.length === 1 ? "it" : `all ${undrafted.length}`}`}
+                </Button>
+              </ManagerOnly>
+              <span className="text-xs text-muted-foreground">One small Claude call each, logged on Usage.</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {lists.data && lists.data.lists.length === 0 ? (
         <EmptyState
@@ -135,7 +194,7 @@ function SmartLists({ wsId }: { wsId: string }) {
                 >
                   <span className="truncate font-medium">{l.name}</span>
                   <span className="flex shrink-0 items-center gap-1.5">
-                    {l.leadIntelIcpId && <Pill tone="positive">ICP</Pill>}
+                    {l.leadIntelIcpId ? <Pill tone="positive">ICP</Pill> : l.icpDraft ? <Pill tone="info">Draft ICP</Pill> : null}
                     <span className="tabular-nums text-muted-foreground">{l.count}</span>
                   </span>
                 </button>
@@ -143,7 +202,7 @@ function SmartLists({ wsId }: { wsId: string }) {
             ))}
           </ul>
           {openId ? (
-            <ListDetail key={openId} wsId={wsId} id={openId} onChanged={lists.reload} />
+            <ListDetail key={openId} wsId={wsId} id={openId} lists={lists.data?.lists ?? []} onChanged={lists.reload} />
           ) : (
             <p className="text-sm text-muted-foreground">Pick a list to see who&apos;s in it.</p>
           )}
@@ -153,9 +212,42 @@ function SmartLists({ wsId }: { wsId: string }) {
   )
 }
 
-function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChanged: () => void }) {
-  const list = useApi(() => fetchSmartList(wsId, id), [wsId, id])
+const PAGE_SIZES = [25, 50, 100, 200]
+const NEW_LIST = "__new__"
+
+function ListDetail({
+  wsId,
+  id,
+  lists,
+  onChanged,
+}: {
+  wsId: string
+  id: string
+  lists: SmartList[]
+  onChanged: () => void
+}) {
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [search, setSearch] = useState("")
+  const [q, setQ] = useState("")
+  const list = useApi(() => fetchSmartList(wsId, id, page, pageSize, q), [wsId, id, page, pageSize, q])
   const [name, setName] = useState<string | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [target, setTarget] = useState("")
+  const [newName, setNewName] = useState("")
+  const [moving, setMoving] = useState(false)
+  const { me } = useAuth()
+  const manager = canManage(me?.role)
+
+  // Search once typing stops, from page 1.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setQ(search)
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [search])
+
   const d = list.data
   if (!d) return <p className="text-sm text-muted-foreground">{list.error ?? "Loading…"}</p>
 
@@ -171,9 +263,52 @@ function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChang
     }
   }
   const slug = d.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list"
+  const rows = d.kind === "company" ? d.companies : d.people
+  const pageIds = rows.map((r) => r.id)
+  const allPicked = pageIds.length > 0 && pageIds.every((x) => picked.has(x))
+  const pages = Math.max(1, Math.ceil(d.matching / d.pageSize))
+  const toggle = (rowId: string) =>
+    setPicked((s) => {
+      const next = new Set(s)
+      if (next.has(rowId)) next.delete(rowId)
+      else next.add(rowId)
+      return next
+    })
+  const togglePage = () =>
+    setPicked((s) => {
+      const next = new Set(s)
+      for (const x of pageIds) {
+        if (allPicked) next.delete(x)
+        else next.add(x)
+      }
+      return next
+    })
+  const others = lists.filter((l) => l.id !== id)
+  const what = (n: number) => (d.kind === "company" ? (n === 1 ? "company" : "companies") : n === 1 ? "person" : "people")
+  const first = (page - 1) * d.pageSize + 1
+  const last = Math.min(page * d.pageSize, d.matching)
+
+  const move = async () => {
+    if (!picked.size || !target || (target === NEW_LIST && !newName.trim())) return
+    const to = target === NEW_LIST ? { newName: newName.trim() } : { listId: target }
+    setMoving(true)
+    try {
+      const r = await moveToSmartList(wsId, d.kind, [...picked], to)
+      toast.success(`Moved ${r.moved} ${what(r.moved)} to ${r.toListName}`)
+      setPicked(new Set())
+      setTarget("")
+      setNewName("")
+      list.reload()
+      onChanged()
+    } catch (e) {
+      toast.error("Couldn't move them", { description: errorText(e) })
+    } finally {
+      setMoving(false)
+    }
+  }
 
   return (
-    <section className="space-y-5 rounded-lg border p-5">
+    <section className="min-w-0 space-y-5 rounded-lg border p-5">
       <div className="flex flex-wrap items-center gap-3">
         {name === null ? (
           <h2 className="text-lg font-semibold">{d.name}</h2>
@@ -188,8 +323,8 @@ function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChang
             onKeyDown={(e) => e.key === "Enter" && void rename()}
           />
         )}
-        <span className="text-sm text-muted-foreground">
-          {d.count} {d.kind === "company" ? (d.count === 1 ? "company" : "companies") : d.count === 1 ? "person" : "people"}
+        <span className="text-sm tabular-nums text-muted-foreground">
+          {d.count.toLocaleString()} {what(d.count)}
         </span>
         <div className="ml-auto flex gap-2">
           {name === null && (
@@ -211,27 +346,91 @@ function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChang
 
       {d.kind === "company" && <IcpDraftPanel wsId={wsId} list={d} onChanged={() => (list.reload(), onChanged())} />}
 
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search this list"
+            className="pl-8"
+            placeholder={d.kind === "company" ? "Search companies or websites" : "Search name, title, company or email"}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {q && (
+          <span className="text-sm tabular-nums text-muted-foreground">
+            {d.matching.toLocaleString()} {d.matching === 1 ? "match" : "matches"}
+          </span>
+        )}
+      </div>
+
+      {picked.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm">
+          <span className="font-medium tabular-nums">
+            {picked.size} {what(picked.size)} selected
+          </span>
+          <Select value={target} onValueChange={setTarget} disabled={!manager}>
+            <SelectTrigger className="h-8 w-52" aria-label="Move to list">
+              <SelectValue placeholder="Move to…" />
+            </SelectTrigger>
+            <SelectContent>
+              {others.map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  {l.name} ({l.count})
+                </SelectItem>
+              ))}
+              <SelectItem value={NEW_LIST}>A new list…</SelectItem>
+            </SelectContent>
+          </Select>
+          {target === NEW_LIST && (
+            <Input
+              aria-label="New list name"
+              className="h-8 w-48"
+              placeholder="List name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          )}
+          <ManagerOnly>
+            <Button size="sm" disabled={moving || !target || (target === NEW_LIST && !newName.trim())} onClick={() => void move()}>
+              {moving ? "Moving…" : "Move"}
+            </Button>
+          </ManagerOnly>
+          <Button size="sm" variant="ghost" onClick={() => setPicked(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted-foreground">
-            {d.kind === "company" ? (
-              <tr>
-                <th className="py-2 pr-3 font-medium">Company</th>
-                <th className="py-2 pr-3 font-medium">Where</th>
-                <th className="py-2 pr-3 font-medium">Why this list</th>
-              </tr>
-            ) : (
-              <tr>
-                <th className="py-2 pr-3 font-medium">Person</th>
-                <th className="py-2 pr-3 font-medium">Company</th>
-                <th className="py-2 pr-3 font-medium">Email</th>
-                <th className="py-2 pr-3 font-medium">Why this list</th>
-              </tr>
-            )}
+            <tr>
+              <th className="w-8 py-2 pr-2">
+                <Checkbox aria-label="Select this page" checked={allPicked} onCheckedChange={togglePage} />
+              </th>
+              {d.kind === "company" ? (
+                <>
+                  <th className="py-2 pr-3 font-medium">Company</th>
+                  <th className="py-2 pr-3 font-medium">Where</th>
+                  <th className="py-2 pr-3 font-medium">Why this list</th>
+                </>
+              ) : (
+                <>
+                  <th className="py-2 pr-3 font-medium">Person</th>
+                  <th className="py-2 pr-3 font-medium">Company</th>
+                  <th className="py-2 pr-3 font-medium">Email</th>
+                  <th className="py-2 pr-3 font-medium">Why this list</th>
+                </>
+              )}
+            </tr>
           </thead>
           <tbody>
             {d.companies.map((c) => (
               <tr key={c.id} className="border-t">
+                <td className="py-2 pr-2">
+                  <Checkbox aria-label={`Select ${c.name}`} checked={picked.has(c.id)} onCheckedChange={() => toggle(c.id)} />
+                </td>
                 <td className="py-2 pr-3">
                   <div className="font-medium">{c.name}</div>
                   {c.domain && <div className="text-xs text-muted-foreground">{c.domain}</div>}
@@ -242,6 +441,9 @@ function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChang
             ))}
             {d.people.map((p) => (
               <tr key={p.id} className="border-t">
+                <td className="py-2 pr-2">
+                  <Checkbox aria-label={`Select ${p.name}`} checked={picked.has(p.id)} onCheckedChange={() => toggle(p.id)} />
+                </td>
                 <td className="py-2 pr-3">
                   <div className="font-medium">{p.name}</div>
                   <div className="text-xs text-muted-foreground">{p.title}</div>
@@ -253,6 +455,47 @@ function ListDetail({ wsId, id, onChanged }: { wsId: string; id: string; onChang
             ))}
           </tbody>
         </table>
+        {rows.length === 0 && (
+          <p className="py-6 text-center text-sm text-muted-foreground">{q ? "Nothing matches." : "This list is empty."}</p>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <span>Rows per page</span>
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => {
+              setPageSize(Number(v))
+              setPage(1)
+            }}
+          >
+            <SelectTrigger className="h-8 w-20" aria-label="Rows per page">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PAGE_SIZES.map((n) => (
+                <SelectItem key={n} value={String(n)}>
+                  {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="tabular-nums text-muted-foreground">
+            {d.matching ? `${first.toLocaleString()}–${last.toLocaleString()} of ${d.matching.toLocaleString()}` : "0"}
+          </span>
+          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+            <ChevronLeft />
+          </Button>
+          <span className="tabular-nums">
+            Page {page} of {pages}
+          </span>
+          <Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Next page">
+            <ChevronRight />
+          </Button>
+        </div>
       </div>
     </section>
   )
