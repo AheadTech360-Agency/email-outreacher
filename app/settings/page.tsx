@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 import { AlertTriangle } from "lucide-react"
 import { toast } from "sonner"
 import { AutoSendSettings } from "@/components/auto-send-settings"
+import { CompanyApprovalSettings } from "@/components/settings/company-approval-settings"
 import { FeedbackSettings } from "@/components/feedback/feedback-settings"
 import { ExclusionsSettings } from "@/components/settings/exclusions-settings"
 import { ResearchSettings } from "@/components/settings/research-settings"
@@ -131,6 +132,13 @@ function SettingsView() {
             description="Every drafted email gets an AI lead score. Below the threshold a person reviews it; at or above it, with auto-send on, it goes out on its own."
           >
             <AutoSendSettings />
+          </Panel>
+          <Panel
+            id="company-approval"
+            title="Company approval"
+            description="Every verified company gets a fit score. At or above the threshold it's approved; below it, it waits for you to approve or reject on the Companies page. Quick Start pauses for these."
+          >
+            <CompanyApprovalSettings />
           </Panel>
           <Panel
             id="sending"

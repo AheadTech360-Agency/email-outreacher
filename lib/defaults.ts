@@ -8,4 +8,5 @@ export const DEFAULT_SETTINGS: Settings = {
   maxPostAgeDays: 60,
   monthlyBudgetUsd: 150,
   scoring: { promptId: null, threshold: 80, autoSend: false, dailyAutoSendCap: 50 },
+  companyApproval: { threshold: 60, autoApprove: true },
 }

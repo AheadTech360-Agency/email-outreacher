@@ -5,6 +5,7 @@ import type { QuickstartRun } from "@/lib/api"
 export const RUN_STATUS: Record<QuickstartRun["status"], { label: string; tone: PillTone }> = {
   queued: { label: "Starting", tone: "info" },
   running: { label: "Running", tone: "info" },
+  waiting: { label: "Waiting for your approval", tone: "warning" },
   done: { label: "Done", tone: "positive" },
   stopped: { label: "Spend limit reached", tone: "warning" },
   failed: { label: "Failed", tone: "negative" },

@@ -19,6 +19,7 @@ import {
   type QuickstartStepKey,
   fetchQuickstartRun,
   queueEmails,
+  decideCompanies,
   resumeQuickstart,
   stopQuickstart,
   updateEmail,
@@ -38,6 +39,7 @@ const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
 ]
 const COMPANY: Record<string, { label: string; tone: PillTone }> = {
   found: { label: "To verify", tone: "neutral" },
+  review: { label: "To approve", tone: "warning" },
   qualified: { label: "Qualified", tone: "positive" },
   not_fit: { label: "Not a fit", tone: "warning" },
   error: { label: "Couldn't finish", tone: "negative" },
@@ -106,7 +108,7 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
         <Summary run={r} />
         <Steps run={r} />
         <Drafts wsId={wsId} run={r} onChanged={run.reload} />
-        <Companies run={r} />
+        <Companies wsId={wsId} run={r} onChanged={run.reload} />
         <Leads run={r} />
         <p className="text-sm">
           <Link href="/quickstart" className="underline">
@@ -127,6 +129,27 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
         onChanged()
       })
       .catch((e: unknown) => toast.error("Couldn't do that", { description: e instanceof Error ? e.message : undefined }))
+  if (run.status === "waiting") {
+    const left = run.companies.filter((c) => c.status === "review").length
+    return (
+      <div className="flex gap-2">
+        <ManagerOnly>
+          <Button
+            disabled={left > 0}
+            title={left ? `Approve or reject the ${left} below first` : undefined}
+            onClick={() => void act(resumeQuickstart(wsId, run.id), "Continuing with the approved companies")}
+          >
+            <Play /> Continue
+          </Button>
+        </ManagerOnly>
+        <ManagerOnly>
+          <Button variant="outline" onClick={() => void act(stopQuickstart(wsId, run.id), "Stopped")}>
+            <Square /> Stop
+          </Button>
+        </ManagerOnly>
+      </div>
+    )
+  }
   if (run.status === "failed")
     return (
       <ManagerOnly>
@@ -418,17 +441,46 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
   )
 }
 
-function Companies({ run }: { run: QuickstartDetail }) {
+function Companies({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail; onChanged: () => void }) {
+  const [busy, setBusy] = useState("")
   if (!run.companies.length) return null
+  const waiting = run.companies.filter((c) => c.status === "review")
+  const decide = async (ids: string[], status: "qualified" | "not_fit") => {
+    setBusy(ids.length === 1 ? ids[0] : "all")
+    try {
+      await decideCompanies(wsId, ids, status)
+      onChanged()
+    } catch (e) {
+      toast.error("Couldn't change it", { description: e instanceof Error ? e.message : undefined })
+    } finally {
+      setBusy("")
+    }
+  }
   return (
-    <details className="group rounded-lg border">
+    <details className="group rounded-lg border" open={waiting.length > 0 || undefined}>
       <summary className="cursor-pointer px-4 py-3 text-base font-semibold">
         Companies ({run.companies.length})
         <span className="ml-2 text-sm font-normal text-muted-foreground">
           {run.companies.filter((c) => c.status === "qualified").length} qualified,{" "}
           {run.companies.filter((c) => c.status === "not_fit").length} not a fit
+          {waiting.length > 0 && `, ${waiting.length} to approve`}
         </span>
       </summary>
+      {waiting.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 border-t bg-warning/10 px-4 py-2 text-sm">
+          <span>{waiting.length} under your approval threshold.</span>
+          <ManagerOnly>
+            <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void decide(waiting.map((c) => c.id), "qualified")}>
+              Approve all {waiting.length}
+            </Button>
+          </ManagerOnly>
+          <ManagerOnly>
+            <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void decide(waiting.map((c) => c.id), "not_fit")}>
+              Reject all
+            </Button>
+          </ManagerOnly>
+        </div>
+      )}
       <div className="divide-y divide-rule border-t">
         {run.companies.map((c) => {
           const s = COMPANY[c.status] ?? { label: c.status, tone: "neutral" as PillTone }
@@ -440,6 +492,20 @@ function Companies({ run }: { run: QuickstartDetail }) {
               </span>
               {c.score !== null && <span className="text-xs tabular-nums text-muted-foreground">Score {c.score}</span>}
               <Pill tone={s.tone}>{s.label}</Pill>
+              {c.status === "review" && (
+                <span className="flex gap-1">
+                  <ManagerOnly>
+                    <Button size="sm" variant="outline" className="h-7" disabled={!!busy} onClick={() => void decide([c.id], "qualified")}>
+                      Approve
+                    </Button>
+                  </ManagerOnly>
+                  <ManagerOnly>
+                    <Button size="sm" variant="ghost" className="h-7" disabled={!!busy} onClick={() => void decide([c.id], "not_fit")}>
+                      Reject
+                    </Button>
+                  </ManagerOnly>
+                </span>
+              )}
             </div>
           )
         })}

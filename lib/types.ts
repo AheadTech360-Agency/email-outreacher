@@ -201,6 +201,14 @@ export interface Settings {
   maxPostAgeDays: number
   monthlyBudgetUsd: number
   scoring: ScoringSettings
+  companyApproval?: CompanyApprovalSettings
+}
+
+/** Company verification, like auto-send: at or above the threshold, with autoApprove on, a company is approved;
+ * every other verified company waits to be approved or rejected. */
+export interface CompanyApprovalSettings {
+  threshold: number
+  autoApprove: boolean
 }
 
 export interface ScoringSettings {

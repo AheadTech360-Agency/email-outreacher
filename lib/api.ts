@@ -651,7 +651,7 @@ export const fetchLeadPosts = (
 
 // ---------- Company pipeline ----------
 
-export type PipelineStatus = "found" | "qualified" | "not_fit" | "error"
+export type PipelineStatus = "found" | "review" | "qualified" | "not_fit" | "error"
 
 export type CompanySource = "lead_intel" | "apollo" | "google_maps"
 
@@ -742,10 +742,14 @@ export const findCompanies = (
   })
 
 export const researchCompanies = (workspaceId: string, companyIds: string[], force = false) =>
-  runJob<{ researched: number; skipped: number; qualified: number; notFit: number; errors: number; costUsd: number; notes: string[] }>(
+  runJob<{ researched: number; skipped: number; qualified: number; notFit: number; toApprove: number; errors: number; costUsd: number; notes: string[] }>(
     "/pipeline/research",
     { workspaceId, body: { companyIds, force } },
   )
+
+/** Approve (qualified) or reject (not_fit) companies: the To approve queue. */
+export const decideCompanies = (workspaceId: string, companyIds: string[], status: "qualified" | "not_fit") =>
+  api<{ changed: number }>("/pipeline/companies/decide", { workspaceId, method: "POST", body: { companyIds, status } })
 
 export const setCompanyStatus = (workspaceId: string, companyId: string, status: "qualified" | "not_fit") =>
   api<PipelineCompany>(`/pipeline/companies/${companyId}`, { workspaceId, method: "PATCH", body: { status } })
@@ -1302,7 +1306,7 @@ export interface QuickstartRun {
   id: string
   icpId: string
   icpName: string
-  status: "queued" | "running" | "done" | "stopped" | "failed" | "cancelled"
+  status: "queued" | "running" | "waiting" | "done" | "stopped" | "failed" | "cancelled"
   step: QuickstartStepKey | "done"
   settings: QuickstartSettings
   steps: Record<QuickstartStepKey, QuickstartStep>

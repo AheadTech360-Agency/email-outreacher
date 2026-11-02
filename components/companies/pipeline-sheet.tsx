@@ -137,12 +137,12 @@ export function PipelineSheet({
             )}
             {company.status !== "qualified" && (
               <ManagerOnly><Button size="sm" variant="outline" disabled={busy} onClick={() => onStatus("qualified")}>
-                <Check /> Keep
+                <Check /> Approve
               </Button></ManagerOnly>
             )}
             {company.status !== "not_fit" && (
               <ManagerOnly><Button size="sm" variant="outline" disabled={busy} onClick={() => onStatus("not_fit")}>
-                <X /> Drop
+                <X /> Reject
               </Button></ManagerOnly>
             )}
             {canExclude && (

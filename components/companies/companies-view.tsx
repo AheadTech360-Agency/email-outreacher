@@ -28,6 +28,7 @@ import {
   fetchPipeline,
   fetchStakeholders,
   researchCompanies,
+  decideCompanies,
   setCompanyStatus,
   useApi,
   type CompanySource,
@@ -38,6 +39,7 @@ import { cn } from "@/lib/utils"
 const MAX_RESEARCH = 10
 const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [
   { value: "all", label: "All" },
+  { value: "review", label: "To approve" },
   { value: "qualified", label: "Qualified" },
   { value: "found", label: "To research" },
   { value: "not_fit", label: "Not a fit" },
@@ -95,6 +97,8 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const shown = visible.slice((current - 1) * pageSize, current * pageSize)
   const picked = list.filter((c) => selected.has(c.id))
   const toResearch = picked.filter(needsResearch)
+  // Approve and Reject act on any verified company, so a decision can also be changed.
+  const toDecide = picked.filter((c) => c.status !== "found")
   const qualified = picked.filter((c) => c.status === "qualified")
   const allChecked = shown.length > 0 && shown.every((c) => selected.has(c.id))
 
@@ -117,7 +121,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
     const id = toast.loading(`Researching ${targets.length} ${targets.length === 1 ? "company" : "companies"}… this can take a minute`)
     try {
       const r = await researchCompanies(wsId, targets.map((c) => c.id), true)
-      toast.success(`${r.qualified} qualified, ${r.notFit} not a fit${r.errors ? `, ${r.errors} couldn't finish` : ""}`, {
+      toast.success(`${r.qualified} approved, ${r.toApprove} to approve${r.errors ? `, ${r.errors} couldn't finish` : ""}`, {
         id,
         description: [r.costUsd ? `Apify charged ${formatUsd(r.costUsd)}.` : "", ...r.notes].filter(Boolean).join(" ") || undefined,
       })
@@ -130,12 +134,26 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
     }
   }
 
+  const decide = async (ids: string[], status: "qualified" | "not_fit") => {
+    setBusy(status)
+    try {
+      const r = await decideCompanies(wsId, ids, status)
+      toast.success(`${status === "qualified" ? "Approved" : "Rejected"} ${r.changed} ${r.changed === 1 ? "company" : "companies"}`)
+      setSelected(new Set())
+      companies.reload()
+    } catch (e) {
+      toast.error("Couldn't change them", { description: e instanceof Error ? e.message : undefined })
+    } finally {
+      setBusy("")
+    }
+  }
+
   const changeStatus = async (company: PipelineCompany, status: "qualified" | "not_fit") => {
     setBusy("status")
     try {
       const updated = await setCompanyStatus(wsId, company.id, status)
       setOpen((o) => (o?.id === updated.id ? updated : o))
-      toast.success(status === "qualified" ? `Kept ${company.name}` : `Dropped ${company.name}`)
+      toast.success(status === "qualified" ? `Approved ${company.name}` : `Rejected ${company.name}`)
       companies.reload()
     } catch (e) {
       toast.error("Couldn't change it", { description: e instanceof Error ? e.message : undefined })
@@ -185,6 +203,18 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         </div>
       </div>
 
+      {counts.review > 0 && filter !== "review" && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
+          <span>
+            {counts.review} {counts.review === 1 ? "company waits" : "companies wait"} for you to approve or reject, under the threshold
+            in Settings.
+          </span>
+          <Button size="sm" variant="outline" onClick={() => (setFilter("review"), setPage(1))}>
+            Review them
+          </Button>
+        </div>
+      )}
+
       <div role="tablist" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
           <button
@@ -215,6 +245,22 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               onClick={() => void research(toResearch)}
             >
               <FlaskConical /> {busy === "research" ? "Researching…" : `Research ${toResearch.length}`}
+            </Button></ManagerOnly>
+            <ManagerOnly><Button
+              size="sm"
+              variant="outline"
+              disabled={!toDecide.length || !!busy}
+              onClick={() => void decide(toDecide.map((c) => c.id), "not_fit")}
+            >
+              {busy === "not_fit" ? "Rejecting…" : `Reject ${toDecide.length}`}
+            </Button></ManagerOnly>
+            <ManagerOnly><Button
+              size="sm"
+              variant="outline"
+              disabled={!toDecide.length || !!busy}
+              onClick={() => void decide(toDecide.map((c) => c.id), "qualified")}
+            >
+              {busy === "qualified" ? "Approving…" : `Approve ${toDecide.length}`}
             </Button></ManagerOnly>
             <ManagerOnly><Button size="sm" disabled={!qualified.length || !!busy} onClick={() => setStakeholdersFor(qualified)}>
               <UserSearch /> Find stakeholders at {qualified.length}
