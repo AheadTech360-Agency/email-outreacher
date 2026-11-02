@@ -90,7 +90,7 @@ function NewRun({ wsId }: { wsId: string }) {
   const [terms, setTerms] = useState<string[]>([])
   const [places, setPlaces] = useState<string[]>([])
   const [titles, setTitles] = useState<string[]>([])
-  const [n, setN] = useState({ radius: "10", requests: "4", companies: "10", people: "2", leads: "20", posts: "5", limit: "" })
+  const [n, setN] = useState({ radius: "10", requests: "20", companies: "10", people: "2", leads: "20", posts: "5", limit: "" })
   const [findEmails, setFindEmails] = useState(true)
   const [onlyWithEmail, setOnlyWithEmail] = useState(true)
   const [starting, setStarting] = useState(false)
@@ -118,6 +118,8 @@ function NewRun({ wsId }: { wsId: string }) {
     { step: `Read up to ${num("posts")} posts for ${leads} leads`, cost: leads * num("posts") * PRICE.post },
     { step: `Write ${leads} emails`, cost: leads * PRICE.write },
   ]
+  // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
+  const requestsNeeded = places.length + terms.length * places.length * 3
   const estimate = lines.reduce((sum, l) => sum + l.cost, 0)
   const limit = n.limit === "" ? Math.max(0.5, Math.ceil(estimate * 1.2 * 100) / 100) : Number(n.limit)
 
@@ -150,11 +152,11 @@ function NewRun({ wsId }: { wsId: string }) {
     }
   }
 
-  const number = (k: keyof typeof n, label: string, hint: string) => (
+  const number = (k: keyof typeof n, label: string, hint: string, warn = false) => (
     <div className="space-y-1.5">
       <Label htmlFor={`qs-${k}`}>{label}</Label>
       <Input id={`qs-${k}`} type="number" inputMode="numeric" className="w-28" value={n[k]} onChange={field(k)} />
-      <p className="text-xs text-muted-foreground">{hint}</p>
+      <p className={warn ? "text-xs text-amber-700 dark:text-amber-400" : "text-xs text-muted-foreground"}>{hint}</p>
     </div>
   )
 
@@ -195,15 +197,24 @@ function NewRun({ wsId }: { wsId: string }) {
         <div className="space-y-1.5">
           <Label htmlFor="qs-places">Where</Label>
           <TagInput places id="qs-places" value={places} onChange={setPlaces} placeholder="Austin, TX" />
-          <p className="text-xs text-muted-foreground">US cities, states or postcodes, like Austin, TX. Press Enter after each.</p>
+          <p className="text-xs text-muted-foreground">
+            US cities or postcodes, like Austin, TX, or a whole state or the United States (searched in full). Press Enter after each.
+          </p>
         </div>
       </div>
 
       <div>
         <p className="mb-3 text-sm font-medium">3. How much of each step</p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {number("radius", "Radius (miles)", "Around each place.")}
-          {number("requests", "Google requests", "Each finds up to 20 businesses.")}
+          {number("radius", "Radius (miles)", "Around each city. A state or country is searched in full.")}
+          {number(
+            "requests",
+            "Google requests",
+            num("requests") < requestsNeeded
+              ? `Too few for ${terms.length * places.length} searches: about ${requestsNeeded} lets each one run.`
+              : "Each finds up to 20 businesses.",
+            num("requests") < requestsNeeded,
+          )}
           {number("companies", "Companies to verify", "Website, Instagram and fit score.")}
           {number("people", "People per company", "Found on LinkedIn.")}
           {number("leads", "Most leads", "People who get an email.")}

@@ -125,7 +125,7 @@ export function GoogleMapsSearchDialog({
             <Label htmlFor="maps-locations">Places</Label>
             <TagInput places id="maps-locations" value={locations} onChange={setLocations} placeholder="Chicago, IL" />
             <p className={errors.locations ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-              {errors.locations || "US cities, states or postcodes, like Chicago, IL. Press Enter after each. From the ICP's places."}
+              {errors.locations || "US cities or postcodes, like Chicago, IL, or a whole state or the United States (searched in full). Press Enter after each."}
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -133,7 +133,7 @@ export function GoogleMapsSearchDialog({
               <Label htmlFor="maps-radius">Radius (miles)</Label>
               <Input id="maps-radius" type="number" min={1} max={50} value={radius} onChange={(e) => setRadius(e.target.value)} />
               <p className={errors.radius ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-                {errors.radius || "Around each place."}
+                {errors.radius || "Around each city. A state or country is searched in full."}
               </p>
             </div>
             <div className="space-y-1.5">
