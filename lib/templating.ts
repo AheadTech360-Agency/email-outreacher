@@ -116,9 +116,14 @@ const VERIFY_VARS = [
   ...PRODUCT_VARS,
 ]
 
+/** Sorting prompts are filled by the backend, 25 companies or people at a time (services/smart_lists.py). */
+const SORT_VARS = ["sort.icps", "sort.lists", "sort.items"]
+
 /** Variables offered in the editor sidebar for each prompt kind. `lead.extra.*` is matched by prefix. */
 export function availableVariables(kind: PromptKind): string[] {
   if (kind === "verify") return VERIFY_VARS
+  if (kind === "sort") return SORT_VARS
+  if (kind === "sort_people") return ["sort.lists", "sort.items"]
   if (kind === "followup2" || kind === "followup3") return [...FOLLOWUP_VARS, ...PRODUCT_VARS]
   const person = [...ICP_VARS, ...LEAD_VARS, "lead.extra.<column>", ...POST_VARS, ...COMPANY_VARS, "company.summary", ...PRODUCT_VARS]
   if (kind === "hook") return person

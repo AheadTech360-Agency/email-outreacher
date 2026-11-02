@@ -29,7 +29,7 @@ export default function SmartListsPage() {
     <>
       <PageHeader
         title="Smart lists"
-        description="Companies and people grouped by Claude into broad lists: industries for companies, roles for people. Duplicates join their twin's list. Each company list can become a base ICP."
+        description="Companies and people grouped by Claude into broad lists: industries for companies, roles for people. Each company also goes under the ICP it fits; a list no ICP fits gets a draft ICP to create. Duplicates join their twin's list."
       />
       <div className="px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <SmartLists key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -53,7 +53,9 @@ function SmartLists({ wsId }: { wsId: string }) {
       const r = await sortSmartLists(wsId, kind, SORT_LIMIT)
       const parts = [`${r.sorted} sorted`]
       if (r.duplicates) parts.push(`${r.duplicates} duplicate${r.duplicates === 1 ? "" : "s"} joined their twin's list`)
+      if (r.matchedIcp) parts.push(`${r.matchedIcp} matched to an ICP`)
       if (r.newLists.length) parts.push(`new: ${r.newLists.join(", ")}`)
+      if (r.drafted.length) parts.push(`ICP drafted for ${r.drafted.join(", ")}`)
       if (r.left) parts.push(`${r.left} left to sort`)
       if (r.errors.length) toast.error("Sorting stopped early", { description: r.errors[0] })
       toast.success(`Smart lists updated · ${formatUsd(r.costUsd)}`, { description: parts.join(" · ") })

@@ -160,7 +160,24 @@ Example emails in our voice:
     temperature: 0.7,
     maxTokens: 4096,
     maxPosts: null,
-  },}
+  },
+  sort: {
+    systemPrompt:
+      "You sort businesses for a sales team. For each one you choose two things.\n\n1. Its smart list: one high-level industry, named in one to three plain words, like \"Retail\", \"Manufacturing\", \"Healthcare\", \"Construction\", \"Food & Beverage\", \"Printing\", \"Professional Services\", \"Real Estate\", \"Automotive\", \"Education\", \"Nonprofit\".\n- Always the broad industry, never a sub-category or a combination. \"Retail\", never \"Retail - DTF\", \"Apparel Retail\" or \"Online T-shirt Store\".\n- If an existing list is even remotely similar, use it, spelled exactly as given. Start a new list only when nothing existing fits at all.\n- When there's too little to tell what the business does, use \"Uncategorized\".\n\n2. Its ICP: the name of the one ICP (ideal customer profile) this business is, spelled exactly as given, or an empty string when none of them fits. Fit means the business is the kind the ICP describes (what it does and sells, who it serves), not merely in a related trade. Don't stretch: an empty ICP is the right answer for a business no ICP describes.\n\nJudge from what the business says about itself first (its website), then its listing. Use only the evidence given.\nreason: a few words naming the evidence, e.g. \"sells custom DTF transfers online\".\nReturn one item for every id you're given, with the same id.",
+    userPrompt: "Sort these businesses.\n\n## Our ICPs\n{{sort.icps}}\n\n## Existing smart lists\n{{sort.lists}}\n\n## The businesses\n{{sort.items}}",
+    temperature: 0,
+    maxTokens: 8192,
+    maxPosts: null,
+  },
+  sort_people: {
+    systemPrompt:
+      "You sort people for a sales team into smart lists. Each list is one high-level role, named in one to three plain words, like \"Owners & Executives\", \"Sales\", \"Marketing\", \"Operations\", \"Finance\", \"Technology\", \"Human Resources\", \"Customer Service\", \"Production\".\n\nRules:\n- Always the broad role, never a specific title or a seniority split. \"Marketing\", never \"Senior Marketing Manager\" or \"Marketing - Social\".\n- Owners, founders, presidents, CEOs and other top executives are \"Owners & Executives\".\n- If an existing list is even remotely similar, use it, spelled exactly as given. Start a new list only when nothing existing fits at all.\n- When there's too little to tell, use \"Uncategorized\".\nreason: a few words naming the evidence, e.g. \"title: Head of Growth\".\nReturn one item for every id you're given, with the same id.",
+    userPrompt: "Sort these people.\n\n## Existing smart lists\n{{sort.lists}}\n\n## The people\n{{sort.items}}",
+    temperature: 0,
+    maxTokens: 8192,
+    maxPosts: null,
+  },
+}
 
 export const KIND_LABEL: Record<PromptKind, string> = {
   verify: "Company verification",
@@ -169,4 +186,6 @@ export const KIND_LABEL: Record<PromptKind, string> = {
   score: "Email scoring",
   followup2: "Follow-up (email 2)",
   followup3: "Follow-up (email 3)",
+  sort: "Company sorting",
+  sort_people: "People sorting",
 }

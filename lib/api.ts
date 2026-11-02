@@ -93,6 +93,9 @@ export interface Job {
   status: "queued" | "running" | "done" | "failed" | "cancelled"
   /** What's happening now, in words, like "Waiting for a worker". */
   step: string | null
+  /** How far along the step is: `done` of `total` (total null when unknown). */
+  done: number
+  total: number | null
   detail: string | null
   statusCode: number | null
   result: unknown
@@ -1399,6 +1402,8 @@ export interface SortListsResult {
   duplicates: number
   newLists: string[]
   sitesRead: number
+  matchedIcp: number
+  drafted: string[]
   left: number
   costUsd: number
   errors: string[]
@@ -1435,3 +1440,27 @@ export async function downloadCsv(workspaceId: string, path: string, filename: s
   link.click()
   URL.revokeObjectURL(link.href)
 }
+
+export interface ImportRunResult {
+  totalRows: number
+  valid: number
+  added: number
+  updated: number
+  leadsCreated: number
+  companiesAdded: number
+  duplicatesInFile: number
+  errors: { row: number; reason: string }[]
+  companiesSorted: SortListsResult | null
+  peopleSorted: SortListsResult | null
+  costUsd: number
+}
+
+/** Import a people CSV as a background job, reporting each step; with `sort`, Claude then sorts what it brought in
+ * into ICPs and smart lists (Management only). */
+export const importPeopleRun = (
+  workspaceId: string,
+  csv: string,
+  icpId: string | null,
+  sort: boolean,
+  onUpdate?: (job: Job) => void,
+) => runJob<ImportRunResult>("/stakeholders/import-run", { workspaceId, body: { csv, icpId, sort } }, onUpdate)

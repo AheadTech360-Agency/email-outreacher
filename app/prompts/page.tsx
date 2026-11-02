@@ -52,6 +52,17 @@ const SECTIONS: { kind: PromptKind; title: string; description: string }[] = [
     title: "Follow-up (email 3)",
     description: "The last email, closing the loop. Written just before it's due, only if there's still no reply.",
   },
+  {
+    kind: "sort",
+    title: "Company sorting",
+    description:
+      "Puts each company in a high-level smart list and under the ICP it fits, from its website and listing. Runs on import and from Smart lists. The answer's shape is fixed.",
+  },
+  {
+    kind: "sort_people",
+    title: "People sorting",
+    description: "Puts each person in a high-level role list (Owners & Executives, Marketing...). Runs on import and from Smart lists.",
+  },
 ]
 
 export default function PromptsPage() {

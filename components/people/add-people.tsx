@@ -3,7 +3,9 @@
 import { useState } from "react"
 import { Download, FileUp, UserPlus } from "lucide-react"
 import { toast } from "sonner"
+import { ImportProgress, ImportSummary } from "@/components/people/import-progress"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,7 +17,14 @@ import {
   downloadTemplate,
   addPerson,
   importPeople,
+  importPeopleRun,
+  type ImportRunResult,
+  type Job,
 } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
+import { formatUsd } from "@/lib/format"
+import { MANAGERS_ONLY_HINT, canManage } from "@/lib/roles"
+import { cn } from "@/lib/utils"
 
 const NO_ICP = "__none__"
 const FIELD_LABEL: Record<string, string> = {
@@ -178,6 +187,11 @@ export function ImportPeopleDialog({
   const [preview, setPreview] = useState<PeopleImportResult | null>(null)
   const [failure, setFailure] = useState("")
   const [busy, setBusy] = useState("")
+  const { me } = useAuth()
+  const manager = canManage(me?.role)
+  const [sort, setSort] = useState(manager)
+  const [job, setJob] = useState<Job | null>(null)
+  const [result, setResult] = useState<ImportRunResult | null>(null)
   const icpId = icp === NO_ICP ? null : icp
 
   const check = async (text: string) => {
@@ -201,31 +215,28 @@ export function ImportPeopleDialog({
   }
 
   const run = async () => {
-    if (!file) return
+    if (!file || !preview) return
     setBusy("import")
+    setJob(null)
+    const sorting = sort && manager
     try {
-      const r = await importPeople(workspaceId, file.text, icpId, false)
-      toast.success(`Imported ${r.added + r.updated} ${r.added + r.updated === 1 ? "person" : "people"}`, {
-        description: [
-          r.updated ? `${r.added} new, ${r.updated} already here and updated.` : "",
-          r.leadsCreated ? `${r.leadsCreated} became leads.` : "",
-          r.errors.length ? `${r.errors.length} rows skipped.` : "",
-        ]
-          .filter(Boolean)
-          .join(" ") || undefined,
-      })
+      const r = await importPeopleRun(workspaceId, file.text, icpId, sorting, setJob)
+      setResult(r)
       onImported()
-      onClose()
     } catch (e) {
       toast.error("Couldn't import them", { description: e instanceof Error ? e.message : undefined })
+    } finally {
       setBusy("")
     }
   }
 
+  // Claude reads each person (and their company) briefly: about $0.06 per 1,000 rows, from the sorting prompt's size.
+  const estimate = preview ? preview.valid * 0.00006 : 0
+
   const unused = preview ? Object.keys(FIELD_LABEL).filter((f) => !Object.values(preview.columns).includes(f)) : []
 
   return (
-    <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && busy !== "check" && onClose()}>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-xl!">
         <DialogHeader>
           <DialogTitle>Import people from a CSV</DialogTitle>
@@ -235,6 +246,11 @@ export function ImportPeopleDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {result ? (
+          <ImportSummary r={result} />
+        ) : busy === "import" ? (
+          <ImportProgress job={job} sorting={sort && manager} rows={preview?.valid ?? 0} />
+        ) : (
         <div className="space-y-4">
           <Button variant="outline" size="sm" onClick={() => void downloadTemplate("people").catch((e) => toast.error(e.message))}>
             <Download /> Download the template
@@ -276,15 +292,38 @@ export function ImportPeopleDialog({
               )}
             </div>
           )}
+          {preview && preview.valid > 0 && (
+            <label className={cn("flex items-start gap-2 text-sm", !manager && "opacity-60")} title={manager ? undefined : MANAGERS_ONLY_HINT}>
+              <Checkbox className="mt-0.5" checked={sort && manager} disabled={!manager} onCheckedChange={(v) => setSort(v === true)} />
+              <span>
+                Sort them into ICPs and Smart Lists with Claude after importing
+                <span className="block text-xs text-muted-foreground">
+                  Each company goes under the ICP it fits, or a draft ICP if none does. About {formatUsd(estimate)}, logged on Usage.
+                  The prompt is editable on Prompts.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
+        )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={!!busy}>
-            Cancel
-          </Button>
-          <Button disabled={!preview || preview.valid === 0 || !!busy} onClick={() => void run()}>
-            <FileUp /> {busy === "import" ? "Importing…" : preview ? `Import ${preview.valid}` : "Import"}
-          </Button>
+          {result ? (
+            <Button onClick={onClose}>Done</Button>
+          ) : busy === "import" ? (
+            <Button variant="outline" onClick={onClose}>
+              Close, keep it running
+            </Button>
+          ) : (
+            <>
+              <Button variant="outline" onClick={onClose} disabled={!!busy}>
+                Cancel
+              </Button>
+              <Button disabled={!preview || preview.valid === 0 || !!busy} onClick={() => void run()}>
+                <FileUp /> {preview ? `Import ${preview.valid.toLocaleString()}` : "Import"}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
