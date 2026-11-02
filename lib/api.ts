@@ -1264,3 +1264,89 @@ export interface LeadImportResult {
 /** Import a CSV into an ICP. With dryRun, nothing is saved: the result previews each row's outcome. */
 export const importLeadsCsv = (workspaceId: string, icpId: string, csv: string, dryRun: boolean) =>
   api<LeadImportResult>(`/leads/import?icpId=${icpId}&dryRun=${dryRun}`, { workspaceId, method: "POST", csv })
+
+// ---------- Quick Start: an ICP from a Google Maps search to drafts in review, in the background ----------
+
+export type QuickstartStepKey = "find" | "research" | "people" | "leads" | "posts" | "write"
+
+export interface QuickstartSettings {
+  searchTerms: string[]
+  places: string[]
+  radiusMiles: number
+  /** Google charges per request; each returns up to 20 businesses. */
+  googleRequests: number
+  /** How many of the businesses found to verify. */
+  companies: number
+  peoplePerCompany: number
+  titles: string[]
+  findEmails: boolean
+  /** The most people made leads. */
+  leads: number
+  onlyWithEmail: boolean
+  /** 0: write without their posts. */
+  postsPerLead: number
+  maxPostAgeDays: number
+}
+
+export interface QuickstartStep {
+  state: "waiting" | "running" | "done" | "skipped" | "failed"
+  done: number
+  total: number | null
+  note: string
+}
+
+export interface QuickstartRun {
+  id: string
+  icpId: string
+  icpName: string
+  status: "queued" | "running" | "done" | "stopped" | "failed" | "cancelled"
+  step: QuickstartStepKey | "done"
+  settings: QuickstartSettings
+  steps: Record<QuickstartStepKey, QuickstartStep>
+  spentUsd: number
+  spendLimitUsd: number
+  detail: string | null
+  createdAt: string
+  finishedAt: string | null
+}
+
+export interface QuickstartDetail extends QuickstartRun {
+  companies: { id: string; name: string; domain: string | null; status: string; reason: string | null; score: number | null }[]
+  leads: {
+    id: string
+    name: string
+    title: string
+    company: string
+    email: string | null
+    emailStatus: string | null
+    posts: number
+    status: string
+  }[]
+  drafts: {
+    id: string
+    leadId: string
+    leadName: string
+    company: string
+    email: string | null
+    emailStatus: string | null
+    subject: string
+    body: string
+    status: EmailStatus
+    score: number | null
+    flags: string[]
+  }[]
+}
+
+export const startQuickstart = (workspaceId: string, body: QuickstartSettings & { icpId: string; spendLimitUsd: number }) =>
+  api<QuickstartRun>("/quickstart/runs", { workspaceId, method: "POST", body })
+
+export const fetchQuickstartRuns = (workspaceId: string) => api<QuickstartRun[]>("/quickstart/runs", { workspaceId })
+
+export const fetchQuickstartRun = (workspaceId: string, runId: string) =>
+  api<QuickstartDetail>(`/quickstart/runs/${runId}`, { workspaceId })
+
+export const stopQuickstart = (workspaceId: string, runId: string) =>
+  api<QuickstartRun>(`/quickstart/runs/${runId}/stop`, { workspaceId, method: "POST" })
+
+export const resumeQuickstart = (workspaceId: string, runId: string) =>
+  api<QuickstartRun>(`/quickstart/runs/${runId}/resume`, { workspaceId, method: "POST" })
