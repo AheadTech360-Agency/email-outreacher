@@ -1362,3 +1362,76 @@ function validation(detail: unknown): string | null {
     })
     .join(". ")
 }
+
+// ---------- Smart lists ----------
+
+export type SmartListKind = "company" | "person"
+
+/** Claude's base ICP for a company list. Any field may be empty. */
+export interface SmartListIcpDraft {
+  name: string
+  industry: string
+  description: string
+  searchTerms: string[]
+  anyOf: string[]
+  titles: string[]
+  places: string[]
+}
+
+export interface SmartList {
+  id: string
+  kind: SmartListKind
+  name: string
+  count: number
+  icpDraft: SmartListIcpDraft | null
+  leadIntelIcpId: string | null
+  createdAt: string
+}
+
+export interface SmartListDetail extends SmartList {
+  companies: { id: string; name: string; domain: string | null; city: string | null; state: string | null; source: string; status: string; reason: string }[]
+  people: { id: string; name: string; title: string; company: string | null; email: string | null; emailStatus: string | null; linkedinUrl: string | null; reason: string }[]
+}
+
+export interface SortListsResult {
+  sorted: number
+  byClaude: number
+  duplicates: number
+  newLists: string[]
+  sitesRead: number
+  left: number
+  costUsd: number
+  errors: string[]
+}
+
+export const fetchSmartLists = (workspaceId: string, kind: SmartListKind) =>
+  api<{ lists: SmartList[]; unsorted: number }>(`/smart-lists?kind=${kind}`, { workspaceId })
+
+export const fetchSmartList = (workspaceId: string, id: string) => api<SmartListDetail>(`/smart-lists/${id}`, { workspaceId })
+
+/** Sort companies or people not in a list yet (a background job: Claude, and a homepage read for a company not researched). */
+export const sortSmartLists = (workspaceId: string, kind: SmartListKind, limit: number) =>
+  runJob<SortListsResult>("/smart-lists/sort", { workspaceId, body: { kind, limit } })
+
+export const renameSmartList = (workspaceId: string, id: string, name: string) =>
+  api<SmartList>(`/smart-lists/${id}`, { workspaceId, method: "PATCH", body: { name } })
+
+export const draftSmartListIcp = (workspaceId: string, id: string) =>
+  api<SmartList>(`/smart-lists/${id}/draft-icp`, { workspaceId, method: "POST" })
+
+export const createIcpFromList = (workspaceId: string, id: string, draft: SmartListIcpDraft) =>
+  api<SmartList>(`/smart-lists/${id}/create-icp`, { workspaceId, method: "POST", body: draft })
+
+/** Save a CSV the backend writes (Apollo's people export format). Fetched with the session, so not a plain link. */
+export async function downloadCsv(workspaceId: string, path: string, filename: string) {
+  const token = await accessToken()
+  const res = await fetch(`${API_URL}/api/v1${path}`, {
+    headers: { ...(token && { Authorization: `Bearer ${token}` }), "X-Workspace-Id": workspaceId },
+  })
+  if (!res.ok) throw new ApiError(`Couldn't download it (${res.status}).`, res.status)
+  const link = document.createElement("a")
+  link.href = URL.createObjectURL(await res.blob())
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}

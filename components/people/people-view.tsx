@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
+import { Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -25,6 +25,7 @@ import {
   type ApiPost,
   type Stakeholder,
   addAsLeads,
+  downloadCsv,
   fetchAllStakeholders,
   fetchPipeline,
   fetchIcps,
@@ -244,6 +245,14 @@ function PeopleList({ wsId }: { wsId: string }) {
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           <Button size="sm" variant="outline" onClick={() => setAdding("csv")}>
             <FileUp /> Import CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            title="Everyone here, in Apollo's export format"
+            onClick={() => void downloadCsv(wsId, "/smart-lists/people.csv", "people.csv").catch((e) => toast.error(e.message))}
+          >
+            <Download /> Download CSV
           </Button>
           <Button size="sm" variant="outline" onClick={() => setAdding("one")}>
             <UserPlus /> Add a person

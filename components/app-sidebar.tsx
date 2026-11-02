@@ -3,36 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, type CSSProperties } from "react"
-import {
-  Building2,
-  Calculator,
-  Check,
-  ChevronsUpDown,
-  CircleUserRound,
-  FileText,
-  FolderPlus,
-  Gauge,
-  Inbox,
-  KeyRound,
-  LogOut,
-  type LucideIcon,
-  Mail,
-  Mails,
-  MessageSquareText,
-  Moon,
-  Package,
-  PanelLeftClose,
-  Reply,
-  Rocket,
-  Send,
-  Settings,
-  Sun,
-  Target,
-  UserCog,
-  UserPlus,
-  UserSearch,
-  Users,
-} from "lucide-react"
+import { Building2, Calculator, Check, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -106,6 +77,7 @@ export function AppSidebar() {
         { href: "/products", label: "Products", icon: Package },
         { href: "/companies", label: "Companies", icon: Building2 },
         { href: "/people", label: "People", icon: UserSearch },
+        { href: "/smart-lists", label: "Smart lists", icon: ListTree },
         { href: "/leads", label: "Leads", icon: Users },
       ],
     },
