@@ -18,7 +18,7 @@ export function PageHeader({
     <header className="px-4 pt-5 pb-5 md:px-8 md:pt-7">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-3">
         <SidebarTrigger className="-ml-1.5 md:hidden" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-60">
           <h1 className="truncate text-[22px] leading-8 font-semibold tracking-[-0.015em]">{title}</h1>
           {description && <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>}
         </div>
