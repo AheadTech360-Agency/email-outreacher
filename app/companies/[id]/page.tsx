@@ -10,7 +10,7 @@ import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ManagerOnly } from "@/components/manager-only"
-import { Block, Fact, RecordHeader } from "@/components/record-header"
+import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -122,6 +122,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
       <RecordHeader
         back={{ href: "/companies", label: "Companies" }}
         title={c.name}
+        avatar={<Avatar name={c.name} />}
         facts={[
           <StatusPill key="s" status={c.status} />,
           c.score !== null && <span className="tabular-nums">Score {c.score}</span>,
@@ -193,16 +194,29 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
         </TabsList>
 
         <TabsContent value="overview" className="pt-5">
-          <div className="grid gap-10 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-            <Verdict company={c} />
-            <div className="space-y-8">
+          <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="divide-y [&>*]:py-6 [&>*:first-child]:pt-0">
+              <Verdict company={c} />
+              {Object.entries(c.data ?? {}).map(([group, values]) => (
+                <DataGroup key={group} title={group} values={values} />
+              ))}
+            </div>
+            <Panel>
               <Block title="Contact">
                 <CompanyContacts workspaceId={wsId} company={c} />
               </Block>
               <Block title="Socials">
                 <Socials company={c} />
               </Block>
-            </div>
+              <Block title="At a glance">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                  <Fact label="People">{here.length}</Fact>
+                  <Fact label="Posts saved">{posts.length}</Fact>
+                  <Fact label="Added">{shortDate(c.createdAt)}</Fact>
+                  <Fact label="Verified">{c.researchedAt ? shortDate(c.researchedAt) : "Not yet"}</Fact>
+                </dl>
+              </Block>
+            </Panel>
           </div>
         </TabsContent>
 
@@ -353,7 +367,7 @@ function Socials({ company: c }: { company: PipelineCompany }) {
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
         {Object.entries(all).map(([network, url]) => (
           <Fact key={network} label={NETWORK[network] ?? network}>
-            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline">
+            <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-data hover:underline">
               {url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} <ExternalLink className="size-3 text-muted-foreground" aria-hidden />
             </a>
           </Fact>

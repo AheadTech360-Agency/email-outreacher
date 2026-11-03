@@ -2,9 +2,10 @@
 
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ExternalLink } from "lucide-react"
+import { ArrowRight, ExternalLink } from "lucide-react"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
-import { Block, Fact, RecordHeader } from "@/components/record-header"
+import { StatusPill } from "@/components/companies/pipeline-cells"
+import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill, type PillTone } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -12,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { fetchCompanyContent, fetchEmails, fetchPipelineCompany, fetchPosts, fetchStakeholder, useApi } from "@/lib/api"
 import { shortDate } from "@/lib/format"
 
-const FOUND_BY: Record<string, string> = { apollo: "Apollo", apify_linkedin: "LinkedIn", manual: "Added by hand or CSV" }
+const SENIORITY: Record<string, string> = { vp: "VP", c_suite: "C-suite", owner: "Owner", founder: "Founder", head: "Head" }
+const FOUND_BY: Record<string, string> ={ apollo: "Apollo", apify_linkedin: "LinkedIn", manual: "Added by hand or CSV" }
 const EMAIL_STATUS: Record<string, { label: string; tone: PillTone }> = {
   draft: { label: "To review", tone: "info" },
   edited: { label: "Edited", tone: "info" },
@@ -65,17 +67,20 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
   ].sort((a, b) => (b.postedAt ?? "").localeCompare(a.postedAt ?? ""))
   const theirEmails = (emails.data ?? []).filter((e) => e.lead.id === leadId)
   const address = p.emailStatus ? ADDRESS[p.emailStatus.toLowerCase()] : undefined
+  const data = p.data ?? {}
+  const about = company.data?.data?.About ?? {}
 
   return (
     <>
       <RecordHeader
         back={{ href: "/people", label: "People" }}
         title={name}
+        avatar={<Avatar name={name} round />}
         facts={[
           p.queuedAt ? <Pill key="l" tone="positive">Lead</Pill> : <Pill key="l" tone="neutral">Not a lead yet</Pill>,
           p.title,
           companyId ? (
-            <Link key="c" href={`/companies/${companyId}`} className="hover:text-foreground hover:underline">
+            <Link key="c" href={`/companies/${companyId}`} className="text-data hover:underline">
               {companyName}
             </Link>
           ) : (
@@ -101,37 +106,78 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
         </TabsList>
 
         <TabsContent value="overview" className="pt-5">
-          <div className="max-w-2xl">
-            <Block title="Details">
-              <dl className="grid grid-cols-[9rem_1fr] gap-x-4 gap-y-2.5 text-sm">
-                <Fact label="Email">
-                  {p.email ? (
-                    <span className="flex flex-wrap items-center gap-2">
+          <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="divide-y [&>*]:py-6 [&>*:first-child]:pt-0">
+              <Block title="Email">
+                {p.email ? (
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <a href={`mailto:${p.email}`} className="font-medium text-data hover:underline">
                       {p.email}
-                      {address && <Pill tone={address.tone}>{address.label}</Pill>}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">None yet</span>
-                  )}
-                </Fact>
-                <Fact label="Title">{p.title}</Fact>
-                <Fact label="Seniority">{p.seniority ? p.seniority.replaceAll("_", " ") : ""}</Fact>
-                <Fact label="Company">
-                  {companyId ? (
-                    <Link href={`/companies/${companyId}`} className="hover:underline">
-                      {companyName}
-                    </Link>
-                  ) : (
-                    companyName
-                  )}
-                </Fact>
-                <Fact label="Location">{[company.data?.city, company.data?.state].filter(Boolean).join(", ")}</Fact>
-                <Fact label="Found">
-                  {p.emailStatus === "website" ? "Their company's website" : (FOUND_BY[p.source] ?? p.source)}, {shortDate(p.foundAt)}
-                </Fact>
-                <Fact label="Lead">{p.queuedAt ? `Since ${shortDate(p.queuedAt)}` : "Becomes one when their email is queued"}</Fact>
-              </dl>
-            </Block>
+                    </a>
+                    {address && <Pill tone={address.tone}>{address.label}</Pill>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">None yet. Reveal it from the People page (Apollo credits).</p>
+                )}
+              </Block>
+              <DataGroup
+                title="Role"
+                values={{
+                  ...(p.title ? { Title: p.title } : {}),
+                  ...(p.seniority ? { Seniority: SENIORITY[p.seniority] ?? p.seniority.replaceAll("_", " ").replace(/^\w/, (ch) => ch.toUpperCase()) } : {}),
+                  ...(data.Role ?? {}),
+                }}
+              />
+              {Object.entries(data)
+                .filter(([group]) => group !== "Role")
+                .map(([group, values]) => (
+                  <DataGroup key={group} title={group} values={values} />
+                ))}
+            </div>
+            <Panel>
+              <Block title="Company">
+                {companyName ? (
+                  <div className="space-y-3 text-sm">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={companyName} />
+                      <div className="min-w-0">
+                        {companyId ? (
+                          <Link href={`/companies/${companyId}`} className="font-medium text-data hover:underline">
+                            {companyName}
+                          </Link>
+                        ) : (
+                          <p className="font-medium">{companyName}</p>
+                        )}
+                        {company.data?.domain && <p className="truncate text-xs text-muted-foreground">{company.data.domain}</p>}
+                      </div>
+                    </div>
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+                      <Fact label="Industry">{about.Industry}</Fact>
+                      <Fact label="Employees">{about.Employees}</Fact>
+                      <Fact label="Location">{[company.data?.city ?? about.City, company.data?.state ?? about.State].filter(Boolean).join(", ")}</Fact>
+                      <Fact label="Status">{company.data ? <StatusPill status={company.data.status} /> : null}</Fact>
+                    </dl>
+                    {companyId && (
+                      <Link href={`/companies/${companyId}`} className="inline-flex items-center gap-1 text-[13px] text-data hover:underline">
+                        Open company <ArrowRight className="size-3.5" />
+                      </Link>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Not known.</p>
+                )}
+              </Block>
+              <Block title="Where they stand">
+                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+                  <Fact label="Lead">{p.queuedAt ? `Since ${shortDate(p.queuedAt)}` : "Not yet"}</Fact>
+                  <Fact label="Emails">{theirEmails.length}</Fact>
+                  <Fact label="Posts">{posts.length}</Fact>
+                  <Fact label="Found">
+                    {p.emailStatus === "website" ? "Company website" : (FOUND_BY[p.source] ?? p.source)}, {shortDate(p.foundAt)}
+                  </Fact>
+                </dl>
+              </Block>
+            </Panel>
           </div>
         </TabsContent>
 

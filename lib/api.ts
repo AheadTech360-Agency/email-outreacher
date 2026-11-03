@@ -596,7 +596,11 @@ export const revealStakeholders = (workspaceId: string, stakeholderIds: string[]
 export const fetchAllStakeholders = (workspaceId: string) => api<Stakeholder[]>("/stakeholders", { workspaceId })
 
 /** One person, for their page. */
-export const fetchStakeholder = (workspaceId: string, id: string) => api<Stakeholder>(`/stakeholders/${id}`, { workspaceId })
+/** Everything stored about a record, grouped: {group: {label: value}}. */
+export type RecordData = Record<string, Record<string, string>>
+
+export const fetchStakeholder = (workspaceId: string, id: string) =>
+  api<Stakeholder & { data: RecordData }>(`/stakeholders/${id}`, { workspaceId })
 
 /** A new ICP: exactly Lead Intel's fields. Added to Lead Intel's icps table, shared by both projects. */
 export type IcpCreate = Pick<
@@ -946,7 +950,8 @@ export const rereadCompany = (workspaceId: string, id: string) =>
   }>(`/pipeline/companies/${id}/reread`, { workspaceId })
 
 /** One pipeline company, for its page. */
-export const fetchPipelineCompany = (workspaceId: string, id: string) => api<PipelineCompany>(`/pipeline/companies/${id}`, { workspaceId })
+export const fetchPipelineCompany = (workspaceId: string, id: string) =>
+  api<PipelineCompany & { data: RecordData }>(`/pipeline/companies/${id}`, { workspaceId })
 
 export const fetchCompanyContent = (workspaceId: string, companyId: string) =>
   api<CompanyContent>(`/pipeline/companies/${companyId}/content`, { workspaceId })
