@@ -354,7 +354,7 @@ export const fetchMailboxes = () => api<Mailboxes>("/mailboxes")
 
 export interface SendingSettings {
   senderCompany: string
-  senderAddress: string
+  senderWebsite: string
   followupFallback2: string
   followupFallback3: string
   followupLeadHours: number

@@ -143,7 +143,7 @@ function SettingsView() {
           <Panel
             id="sending"
             title="Sending"
-            description="Every email ends with the sender's name, this company and its address. Saving writes them into each Coldbrew campaign in CheapSequencer that isn't sending."
+            description="Every email ends with the sender's name, this company and its website. Saving writes them into each Coldbrew campaign in CheapSequencer that isn't sending."
           >
             <SendingSettings />
           </Panel>

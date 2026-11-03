@@ -33,7 +33,7 @@ function Form({ wsId, saved, onSaved }: { wsId: string; saved: Values; onSaved: 
   const values: Values = { ...draft, followupLeadHours: hours }
   const valid = !Object.values(errors).some(Boolean)
   const dirty = JSON.stringify(values) !== JSON.stringify(saved)
-  const missing = !draft.senderCompany.trim() || !draft.senderAddress.trim()
+  const missing = !draft.senderCompany.trim() || !draft.senderWebsite.trim()
 
   const submit = async () => {
     setBusy(true)
@@ -78,14 +78,14 @@ function Form({ wsId, saved, onSaved }: { wsId: string; saved: Values; onSaved: 
           <p className="text-xs text-muted-foreground">Shown under the sender&apos;s name.</p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="senderAddress">Physical address</Label>
-          <Textarea
-            id="senderAddress"
-            rows={3}
-            value={draft.senderAddress}
-            onChange={(e) => setDraft((d) => ({ ...d, senderAddress: e.target.value }))}
+          <Label htmlFor="senderWebsite">Website</Label>
+          <Input
+            id="senderWebsite"
+            placeholder="aheadtech360.com"
+            value={draft.senderWebsite}
+            onChange={(e) => setDraft((d) => ({ ...d, senderWebsite: e.target.value }))}
           />
-          <p className="text-xs text-muted-foreground">US law (CAN-SPAM) asks for a postal address in every commercial email.</p>
+          <p className="text-xs text-muted-foreground">Shown under the company name.</p>
         </div>
       </div>
       {missing && <p className="text-xs text-warning">Emails can&apos;t be queued until both are filled in.</p>}
