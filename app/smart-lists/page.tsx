@@ -680,6 +680,25 @@ function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
           <p>Could not load ICP filters: {icps.error}</p>
           <Button variant="outline" size="sm" onClick={icps.reload}>Retry ICPs</Button>
         </div>}
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            aria-label="Select all matching companies"
+            disabled={busy || !matches.length || !!companies.error}
+            checked={matches.length > 0 && matches.every((c) => picked.has(c.id))
+              ? true : matches.some((c) => picked.has(c.id)) ? "indeterminate" : false}
+            onCheckedChange={(checked) => {
+              setPicked((current) => {
+                const next = new Set(current)
+                for (const c of matches) {
+                  if (checked === true) next.add(c.id)
+                  else next.delete(c.id)
+                }
+                return next
+              })
+            }}
+          />
+          Select all matching companies ({matches.length})
+        </label>
         {picked.size > 0 && <div className="flex items-center justify-between text-sm">
           <span>{picked.size} selected across all filters</span>
           <Button variant="ghost" size="sm" disabled={busy} onClick={() => setPicked(new Set())}>Clear selection</Button>
