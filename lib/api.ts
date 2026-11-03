@@ -932,6 +932,19 @@ export interface CompanyContent {
   posts: { id: string; source: string; url: string; postedAt: string | null; text: string; mediaType: string }[]
 }
 
+/** Read the company's website again for socials, emails, phone and pages (no AI; Jina only if the site needs a browser). */
+export const rereadCompany = (workspaceId: string, id: string) =>
+  runJob<{
+    reached: boolean
+    via: string | null
+    pages: number
+    socials: Record<string, string>
+    emails: string[]
+    phone: string | null
+    detail: string | null
+    company: PipelineCompany
+  }>(`/pipeline/companies/${id}/reread`, { workspaceId })
+
 /** One pipeline company, for its page. */
 export const fetchPipelineCompany = (workspaceId: string, id: string) => api<PipelineCompany>(`/pipeline/companies/${id}`, { workspaceId })
 
