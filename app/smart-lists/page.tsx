@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchPipeline, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
   useApi, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
@@ -309,6 +309,7 @@ function ListDetail({
   onChanged: () => void
   onDeleted: () => void
 }) {
+  const [adding, setAdding] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
@@ -410,7 +411,14 @@ function ListDetail({
         <span className="text-sm tabular-nums text-muted-foreground">
           {d.count.toLocaleString()} {what(d.count)}
         </span>
-        <div className="ml-auto flex gap-2">
+        <div className="ml-auto flex flex-wrap gap-2">
+          {d.kind === "company" && (
+            <ManagerOnly>
+              <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+                <Plus /> Add companies
+              </Button>
+            </ManagerOnly>
+          )}
           {name === null && (
             <ManagerOnly>
               <Button variant="ghost" size="sm" onClick={() => setName(d.name)}>
@@ -432,6 +440,19 @@ function ListDetail({
           </ManagerOnly>
         </div>
       </div>
+      {adding && d.kind === "company" && (
+        <AddCompaniesDialog
+          wsId={wsId}
+          listId={id}
+          listName={d.name}
+          onClose={() => setAdding(false)}
+          onAdded={() => {
+            setAdding(false)
+            list.reload()
+            onChanged()
+          }}
+        />
+      )}
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -596,3 +617,84 @@ function ListDetail({
   )
 }
 
+
+
+function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
+  wsId: string
+  listId: string
+  listName: string
+  onClose: () => void
+  onAdded: () => void
+}) {
+  const companies = useApi(() => fetchPipeline(wsId), [wsId])
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [busy, setBusy] = useState(false)
+  const query = search.trim().toLowerCase()
+  const matches = (companies.data ?? []).filter((c) =>
+    [c.name, c.domain, c.city, c.state].some((v) => v?.toLowerCase().includes(query)),
+  )
+  const [pageSize, setPageSize] = useState(25)
+  const visible = matches.slice((page - 1) * pageSize, page * pageSize)
+  const add = async () => {
+    if (busy || !picked.size) return
+    setBusy(true)
+    try {
+      const result = await moveToSmartList(wsId, "company", [...picked], { listId })
+      toast.success(`Added ${result.moved} companies to ${listName}`)
+      onAdded()
+    } catch (e) {
+      toast.error("Couldn't add companies", { description: errorText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add companies to {listName}</DialogTitle>
+          <DialogDescription>
+            Choose workspace companies. Companies in another list move here; companies already here stay here. Their ICP stays the same.
+          </DialogDescription>
+        </DialogHeader>
+        <Input aria-label="Search workspace companies" placeholder="Search companies, websites or locations" value={search}
+          disabled={busy} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+        {companies.error ? (
+          <div role="alert" className="space-y-2 text-sm">
+            <p>{companies.error}</p>
+            <Button variant="outline" onClick={companies.reload}>Try again</Button>
+          </div>
+        ) : !companies.data ? <p className="text-sm">Loading companies...</p> : (
+          <div className="max-h-80 overflow-y-auto">
+            {visible.map((c) => (
+              <label key={c.id} className="flex cursor-pointer items-center gap-3 border-b py-3 text-sm">
+                <Checkbox checked={picked.has(c.id)} disabled={busy} onCheckedChange={(checked) => {
+                  setPicked((current) => {
+                    const next = new Set(current)
+                    if (checked) next.add(c.id)
+                    else next.delete(c.id)
+                    return next
+                  })
+                }} />
+                <span><span className="font-medium">{c.name}</span>
+                  <span className="block text-xs text-muted-foreground">{[c.domain, c.city, c.state].filter(Boolean).join(" ? ")}</span>
+                </span>
+              </label>
+            ))}
+            {!matches.length && <p className="py-4 text-sm text-muted-foreground">{query ? "No matching companies." : "No workspace companies yet. Find companies on the Companies page first."}</p>}
+          </div>
+        )}
+        <Pager page={page} pageSize={pageSize} total={matches.length} onPage={setPage}
+          onPageSize={(size) => { setPageSize(size); setPage(1) }} />
+        <DialogFooter>
+          <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
+          <Button disabled={busy || !picked.size || !companies.data || !!companies.error} onClick={() => void add()}>
+            {busy ? "Adding..." : `Add selected (${picked.size})`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
