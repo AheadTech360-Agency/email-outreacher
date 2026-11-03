@@ -27,9 +27,10 @@ export function postsCeiling(leads: number, perSource: number, sources: readonly
 }
 
 /** What a fetch says, from its results. */
-export function postsSummary(results: { enough: boolean; new: number; stoppedAt: string | null }[]): string {
+export function postsSummary(results: { enough: boolean; new: number; stoppedAt: string | null; enoughIn?: string[] }[]): string {
   const enough = results.filter((r) => r.enough).length
-  const by = (stage: string) => results.filter((r) => r.stoppedAt === stage).length
+  // Each source counted on its own when the run says (Read posts); else the first source that gave enough.
+  const by = (stage: string) => results.filter((r) => (r.enoughIn ? r.enoughIn.includes(stage) : r.stoppedAt === stage)).length
   const parts = [
     by("company_linkedin") && `${by("company_linkedin")} from the company's LinkedIn`,
     by("person_linkedin") && `${by("person_linkedin")} from their own LinkedIn`,

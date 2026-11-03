@@ -1568,6 +1568,7 @@ export interface PostGatherResult {
     new: number
     enough: boolean
     stoppedAt: PostSource | null
+    enoughIn: PostSource[]
     reason: string
   }[]
   costUsd: number

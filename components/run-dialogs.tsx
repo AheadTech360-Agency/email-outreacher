@@ -91,9 +91,9 @@ export function EnrichDialog({
             Fetch posts for {targets.length} lead{targets.length === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Up to {maxPosts} posts from the last {maxAgeDays} days from each source, in order: the company&apos;s LinkedIn, their
-            own LinkedIn, then the company&apos;s Instagram. After each one Claude checks whether there&apos;s enough to write
-            with, and stops there. Every post found is used when the email is written.
+            Each source is read: the company&apos;s LinkedIn, their own LinkedIn, the company&apos;s Instagram. Each starts
+            with 2 posts; Claude checks whether they&apos;re enough to write with, and only if not reads up to {maxPosts}
+            (from the last {maxAgeDays} days). Every post found is used when the email is written.
           </DialogDescription>
         </DialogHeader>
         {sources.length === 0 ? (

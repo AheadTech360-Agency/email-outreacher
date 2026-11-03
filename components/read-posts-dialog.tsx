@@ -15,9 +15,9 @@ import { formatUsd } from "@/lib/format"
 const BATCH = 25 // people or companies per job (the server's limit)
 const JUDGE = 0.0006 // Claude's check after each source, per person or company
 const SOURCES: { key: PostSource; label: string; hint: string; cost: number; people: boolean }[] = [
-  { key: "company_linkedin", label: "Company LinkedIn", hint: "Their company page's posts. Read first.", cost: COST_PER_POST.linkedin, people: false },
-  { key: "person_linkedin", label: "Their own LinkedIn", hint: "Only if the company's weren't enough.", cost: COST_PER_POST.linkedin, people: true },
-  { key: "company_instagram", label: "Company Instagram", hint: "The account their website links. Read last.", cost: COST_PER_POST.instagram, people: false },
+  { key: "company_linkedin", label: "Company LinkedIn", hint: "Their company page's posts.", cost: COST_PER_POST.linkedin, people: false },
+  { key: "person_linkedin", label: "Their own LinkedIn", hint: "The person's own posts.", cost: COST_PER_POST.linkedin, people: true },
+  { key: "company_instagram", label: "Company Instagram", hint: "The account their website links.", cost: COST_PER_POST.instagram, people: false },
 ]
 
 /** Read posts for people and/or companies: any of the three sources, up to a limit each, and Claude stops for each one
@@ -48,7 +48,7 @@ export function ReadPostsDialog({
   const bad = !(Number.isInteger(n) && n >= 1 && n <= 20) || !(Number.isInteger(d) && d >= 1 && d <= 365)
   const count = personIds.length + companyIds.length
   const sources = offered.filter((s) => chosen.has(s.key))
-  const ceiling = count * (n || 0) * sources.reduce((sum, s) => sum + s.cost, 0) + count * JUDGE * sources.length
+  const ceiling = count * ((n || 0) + Math.min(2, n || 0)) * sources.reduce((sum, s) => sum + s.cost, 0) + count * JUDGE * sources.length
   const toggle = (key: PostSource, on: boolean) =>
     setChosen((set) => {
       const next = new Set(set)
@@ -100,8 +100,9 @@ export function ReadPostsDialog({
         <DialogHeader>
           <DialogTitle>Read posts for {what}</DialogTitle>
           <DialogDescription>
-            The sources you tick, in this order. After each one Claude checks whether there&apos;s enough to write with, and
-            stops for that {personIds.length ? "person" : "company"} if there is. Posts already saved aren&apos;t bought again.
+            Every source you tick is read. Each starts with a first look of 2 posts; Claude checks whether they&apos;re
+            enough to write with, and only if not does it read that source up to your limit. Posts already saved
+            aren&apos;t bought again.
           </DialogDescription>
         </DialogHeader>
 
@@ -137,7 +138,7 @@ export function ReadPostsDialog({
             <p className={bad ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
               {bad
                 ? "Posts: 1 to 20. Days: 1 to 365."
-                : `At most about ${formatUsd(ceiling)}, if every source were read in full. Usually far less: most stop at the first source. Logged on Usage.`}
+                : `At most about ${formatUsd(ceiling)}, if every source needed its full limit. Usually less: many stop at the first look. Logged on Usage.`}
             </p>
           </div>
         )}
