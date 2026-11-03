@@ -139,7 +139,13 @@ function PeopleList({ wsId }: { wsId: string }) {
               ? s.source === "manual"
               : s.icpId === foundBy)) &&
       (status === "all" ||
-        (status === "lead" ? !!s.leadId : status === "revealed" ? !!s.revealedAt : !s.revealedAt)) &&
+        (status === "lead"
+          ? !!s.queuedAt
+          : status === "notlead"
+            ? !s.queuedAt
+            : status === "revealed"
+              ? !!s.revealedAt
+              : !s.revealedAt)) &&
       (emailFilter === "all" ||
         (emailFilter === "none" ? !s.email : emailFilter === "verified" ? isVerified(s) : !!s.email)) &&
       (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
@@ -290,7 +296,8 @@ function PeopleList({ wsId }: { wsId: string }) {
             <SelectItem value="all">Any status</SelectItem>
             <SelectItem value="hidden">Email not revealed</SelectItem>
             <SelectItem value="revealed">Email revealed</SelectItem>
-            <SelectItem value="lead">Leads</SelectItem>
+            <SelectItem value="lead">Leads (queued)</SelectItem>
+            <SelectItem value="notlead">Not a lead</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -473,7 +480,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       {s.leadId ? (
                         <div className="flex flex-col items-start gap-0.5">
-                          <Pill tone="positive">Lead</Pill>
+                          {s.queuedAt ? <Pill tone="positive">Lead</Pill> : <Pill tone="neutral">Not queued yet</Pill>}
                           <button
                             type="button"
                             className="text-xs text-data hover:underline tabular-nums"

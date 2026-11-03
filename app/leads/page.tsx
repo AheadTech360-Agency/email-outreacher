@@ -33,7 +33,9 @@ const isVerified = (l: { email: string; emailStatus: string | null }) =>
   !!l.email && ["verified", "valid"].includes((l.emailStatus ?? "").toLowerCase())
 
 export default function LeadsPage() {
-  const { leads, leadsStatus, leadsError, reloadLeads, icps, moveLeads, deleteLeads } = useStore()
+  const { leads: everyone, leadsStatus, leadsError, reloadLeads, icps, moveLeads, deleteLeads } = useStore()
+  // Someone is a lead once their first email is queued for sending; before that they're worked on from People.
+  const leads = everyone.filter((l) => l.queuedAt)
   const loading = leadsStatus === "loading"
   // Leads are also made on the People and Companies pages, so fetch a fresh list on every visit.
   useEffect(() => reloadLeads(), [reloadLeads])
@@ -185,7 +187,7 @@ export default function LeadsPage() {
           <EmptyState
             icon={Users}
             title="No leads yet"
-            description="Leads come from people on the People page (Add as leads, or revealing an email), from a CSV, or one by one."
+            description="Someone becomes a lead once their first email is queued for sending. Find people, write their emails on the People page, approve them in Review, then queue them."
             action={<AddLeadsMenu variant="default" />}
           />
         ) : visible.length === 0 ? (

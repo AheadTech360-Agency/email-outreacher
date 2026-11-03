@@ -139,6 +139,8 @@ export interface Lead {
   emailStatus: string | null
   /** How many of their own posts are stored. */
   postCount: number
+  /** When their first email was queued for sending; only queued people are leads (the Leads page). */
+  queuedAt: string | null
   createdAt: string
 }
 

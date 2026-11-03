@@ -30,7 +30,7 @@ export default function IcpLeadsPage() {
   const [generateIds, setGenerateIds] = useState<string[] | null>(null)
   if (!icp) return null
 
-  const icpLeads = leads.filter((l) => l.icpId === icp.id)
+  const icpLeads = leads.filter((l) => l.icpId === icp.id && l.queuedAt)  // a lead once their email is queued
   const q = query.trim().toLowerCase()
   const visible = icpLeads.filter(
     (l) =>
@@ -91,7 +91,7 @@ export default function IcpLeadsPage() {
         <EmptyState
           icon={Users}
           title="No leads in this ICP"
-          description="Add people as leads on the People page, import a CSV, or add them one by one. Nothing is spent until you fetch posts or write emails."
+          description="Someone becomes a lead once their first email is queued for sending, from Review."
           action={<AddLeadsMenu icpId={icp.id} variant="default" />}
         />
       ) : visible.length === 0 ? (

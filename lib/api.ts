@@ -556,6 +556,8 @@ export interface Stakeholder {
   emailStatus: string | null
   revealedAt: string | null
   leadId: string | null
+  /** When their first email was queued: only then are they a lead. */
+  queuedAt: string | null
   foundAt: string
 }
 
@@ -1203,6 +1205,7 @@ interface ApiLead {
   scoreReasons: string[] | null
   postCount: number
   createdAt: string
+  queuedAt: string | null
 }
 
 function toLead(l: ApiLead): Lead {
@@ -1224,6 +1227,7 @@ function toLead(l: ApiLead): Lead {
     score: l.score === null ? null : { value: l.score, reasons: l.scoreReasons ?? [] },
     postCount: l.postCount,
     createdAt: l.createdAt,
+    queuedAt: l.queuedAt,
   }
 }
 
