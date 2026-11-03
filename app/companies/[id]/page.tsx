@@ -2,7 +2,7 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
-import { Ban, Check, DatabaseZap, ExternalLink, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
+import { Ban, Check, DatabaseZap, ExternalLink, Newspaper, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
@@ -10,6 +10,7 @@ import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
+import { ReadPostsDialog } from "@/components/read-posts-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill } from "@/components/status"
@@ -51,6 +52,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
   const [reverifying, setReverifying] = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [fillingIn, setFillingIn] = useState(false)
+  const [readingPosts, setReadingPosts] = useState(false)
 
   if (company.error && !company.data)
     return (
@@ -168,6 +170,9 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                     <X /> Reject
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setReadingPosts(true)}>
+                  <Newspaper /> Read posts (LinkedIn, Instagram)
+                </DropdownMenuItem>
                 <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setFillingIn(true)}>
                   <DatabaseZap /> Fill in (Instagram, LinkedIn{here.length ? ", people" : ""})
                 </DropdownMenuItem>
@@ -297,6 +302,9 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
             company.reload()
           }}
         />
+      )}
+      {readingPosts && (
+        <ReadPostsDialog wsId={wsId} companyIds={[c.id]} onClose={() => setReadingPosts(false)} onDone={() => content.reload()} />
       )}
       {fillingIn && (
         <EnrichDialog

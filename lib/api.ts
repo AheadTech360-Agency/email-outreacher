@@ -1555,3 +1555,30 @@ export const enrichCompanies = (workspaceId: string, companyIds: string[], opts:
 /** Their full LinkedIn profiles, $0.004 each. A background job. */
 export const enrichPeople = (workspaceId: string, stakeholderIds: string[], onUpdate?: (job: Job) => void) =>
   runJob<EnrichResult>("/stakeholders/enrich", { workspaceId, body: { stakeholderIds } }, onUpdate)
+
+export type PostSource = "company_linkedin" | "person_linkedin" | "company_instagram"
+
+export interface PostGatherResult {
+  results: {
+    kind: "person" | "company"
+    id: string
+    companyLinkedin: number | null
+    linkedin: number | null
+    instagram: number | null
+    new: number
+    enough: boolean
+    stoppedAt: PostSource | null
+    reason: string
+  }[]
+  costUsd: number
+  claudeCostUsd: number
+  error: string | null
+}
+
+/** Read posts for people and/or companies (25 a job): the sources ticked, up to `maxPosts` each, stopping for each one
+ * as soon as Claude finds enough to write with. */
+export const gatherPosts = (
+  workspaceId: string,
+  body: { stakeholderIds?: string[]; companyIds?: string[]; sources: PostSource[]; maxPosts: number; maxAgeDays: number },
+  onUpdate?: (job: Job) => void,
+) => runJob<PostGatherResult>("/posts/gather", { workspaceId, body }, onUpdate)

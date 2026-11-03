@@ -3,11 +3,12 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Building2, DatabaseZap, Download, FileDown, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
+import { Building2, DatabaseZap, Download, FileDown, Newspaper, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
+import { ReadPostsDialog } from "@/components/read-posts-dialog"
 import { ApolloSearchDialog } from "@/components/companies/apollo-search-dialog"
 import { GoogleMapsSearchDialog } from "@/components/companies/google-maps-search-dialog"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
@@ -78,6 +79,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const [filter, setFilter] = useState<"all" | PipelineStatus>("all")
   const [confirmReverify, setConfirmReverify] = useState<PipelineCompany[] | null>(null)
   const [fillingIn, setFillingIn] = useState<string[] | null>(null)
+  const [readingPosts, setReadingPosts] = useState<string[] | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
@@ -287,6 +289,9 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             >
               {busy === "qualified" ? "Approving…" : `Approve ${toDecide.length}`}
             </Button></ManagerOnly>
+            <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy || picked.length > 2000} onClick={() => setReadingPosts(picked.map((c) => c.id))}>
+              <Newspaper /> Read posts for {picked.length}
+            </Button></ManagerOnly>
             <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy} onClick={() => setFillingIn(picked.map((c) => c.id))}>
               <DatabaseZap /> Fill in {picked.length}
             </Button></ManagerOnly>
@@ -447,6 +452,17 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           onDone={() => {
             setSelected(new Set())
             people.reload()
+          }}
+        />
+      )}
+      {readingPosts && (
+        <ReadPostsDialog
+          wsId={wsId}
+          companyIds={readingPosts}
+          onClose={() => setReadingPosts(null)}
+          onDone={() => {
+            setSelected(new Set())
+            companies.reload()
           }}
         />
       )}

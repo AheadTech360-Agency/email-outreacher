@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
+import { ReadPostsDialog } from "@/components/read-posts-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
@@ -18,9 +19,7 @@ import { Pill, type PillTone } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
@@ -31,13 +30,11 @@ import {
   fetchAllStakeholders,
   fetchPipeline,
   fetchIcps,
-  fetchLeadPosts,
   fetchPosts,
   generateEmails,
   revealStakeholders,
   useApi,
 } from "@/lib/api"
-import { postsCeiling, postsSummary } from "@/lib/costs"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 
@@ -365,11 +362,11 @@ function PeopleList({ wsId }: { wsId: string }) {
             <ManagerOnly><Button
               size="sm"
               variant="outline"
-              disabled={!withLead.length || withLead.length > MAX_LEADS || !!busy}
-              title={withLead.length > MAX_LEADS ? `Fetch posts for up to ${MAX_LEADS} leads at a time` : undefined}
+              disabled={!picked.length || picked.length > MAX_LEADS || !!busy}
+              title={picked.length > MAX_LEADS ? `Read posts for up to ${MAX_LEADS} at a time` : "Company LinkedIn, their LinkedIn, company Instagram"}
               onClick={() => setFetchingPosts(true)}
             >
-              <Newspaper /> Fetch posts for {withLead.length}
+              <Newspaper /> Read posts for {picked.length}
             </Button></ManagerOnly>
             <ManagerOnly><Button
               size="sm"
@@ -555,13 +552,14 @@ function PeopleList({ wsId }: { wsId: string }) {
         <ImportPeopleDialog workspaceId={wsId} icps={icps.data ?? []} onClose={() => setAdding(null)} onImported={people.reload} />
       )}
       {fetchingPosts && (
-        <FetchPostsDialog
+        <ReadPostsDialog
           wsId={wsId}
-          people={withLead}
+          personIds={picked.map((s) => s.id)}
           onClose={() => setFetchingPosts(false)}
           onDone={() => {
             setSelected(new Set())
             posts.reload()
+            people.reload()
           }}
         />
       )}
@@ -593,102 +591,5 @@ function PeopleList({ wsId }: { wsId: string }) {
         }}
       />
     </>
-  )
-}
-
-/** Choose how many posts and how far back, see the most it can cost, then fetch. */
-function FetchPostsDialog({
-  wsId,
-  people,
-  onClose,
-  onDone,
-}: {
-  wsId: string
-  people: Stakeholder[]
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [maxPosts, setMaxPosts] = useState("3")
-  const [days, setDays] = useState("60")
-  const [running, setRunning] = useState(false)
-  const n = Number(maxPosts)
-  const d = Number(days)
-  const bad = !(Number.isInteger(n) && n >= 1 && n <= 20) || !(Number.isInteger(d) && d >= 1 && d <= 365)
-  const ceiling = postsCeiling(people.length, n, ["linkedin", "instagram"])
-
-  const [done, setDone] = useState(0)
-
-  const run = async () => {
-    setRunning(true)
-    let fresh = 0
-    let cost = 0
-    const all: { enough: boolean; new: number; stoppedAt: string | null }[] = []
-    try {
-      for (const [i, group] of chunks(people).entries()) {
-        setDone(i * BATCH)
-        const r = await fetchLeadPosts(wsId, { leadIds: group.map((s) => s.leadId!), maxPosts: n, maxAgeDays: d })
-        fresh += r.results.reduce((sum, x) => sum + x.new, 0)
-        cost += (r.costUsd ?? 0) + r.claudeCostUsd
-        all.push(...r.results)
-        if (r.error) {
-          toast.error("Apify refused", { description: r.error })
-          onDone()
-          return onClose()
-        }
-      }
-      toast.success(postsSummary(all), { description: `${fresh} new posts saved. ${formatUsd(cost)} with Claude's checks.` })
-      onDone()
-      onClose()
-    } catch (e) {
-      toast.error("Couldn't fetch posts", { description: e instanceof Error ? e.message : undefined })
-      onDone()
-      setRunning(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(o) => !o && !running && onClose()}>
-      <DialogContent className="sm:max-w-md!">
-        <DialogHeader>
-          <DialogTitle>
-            Fetch posts for {people.length} {people.length === 1 ? "lead" : "leads"}
-          </DialogTitle>
-          <DialogDescription>
-            Their LinkedIn posts, and Instagram posts from their own account or their company&apos;s (already found by
-            Lead Intel). Fetched through Apify, paid per post.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="fetch-posts"
-          className="grid grid-cols-2 gap-4"
-          onSubmit={(e) => {
-            e.preventDefault()
-            if (!bad) void run()
-          }}
-        >
-          <div className="space-y-1.5">
-            <Label htmlFor="posts-max">Posts per source</Label>
-            <Input id="posts-max" type="number" inputMode="numeric" value={maxPosts} onChange={(e) => setMaxPosts(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="posts-days">From the last (days)</Label>
-            <Input id="posts-days" type="number" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} />
-          </div>
-          <p className={bad ? "col-span-2 text-xs text-destructive" : "col-span-2 text-xs text-muted-foreground tabular-nums"}>
-            {bad
-              ? "Posts: 1 to 20. Days: 1 to 365."
-              : `At most about ${formatUsd(ceiling)}, if every lead has both sources and that many posts.${people.length > BATCH ? ` Runs ${BATCH} leads at a time: keep this tab open until it finishes.` : ""}`}
-          </p>
-        </form>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={running}>
-            Cancel
-          </Button>
-          <Button type="submit" form="fetch-posts" disabled={running || bad}>
-            <Newspaper /> {running ? (people.length > BATCH ? `Fetching… ${done} of ${people.length} done` : "Fetching… this can take a minute") : "Fetch posts"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }

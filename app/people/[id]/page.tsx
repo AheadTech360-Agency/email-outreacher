@@ -3,9 +3,10 @@
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import { useState } from "react"
-import { ArrowRight, DatabaseZap, ExternalLink } from "lucide-react"
+import { ArrowRight, DatabaseZap, ExternalLink, Newspaper } from "lucide-react"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { EnrichDialog } from "@/components/enrich-dialog"
+import { ReadPostsDialog } from "@/components/read-posts-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { StatusPill } from "@/components/companies/pipeline-cells"
 import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
@@ -41,6 +42,7 @@ export default function PersonPage() {
 function Person({ wsId, id }: { wsId: string; id: string }) {
   const person = useApi(() => fetchStakeholder(wsId, id), [wsId, id])
   const [fillingIn, setFillingIn] = useState(false)
+  const [readingPosts, setReadingPosts] = useState(false)
   const p = person.data
   const companyId = p?.pipelineCompanyId ?? null
   const leadId = p?.leadId ?? null
@@ -92,7 +94,13 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
           ),
         ]}
         actions={
-          p.linkedinUrl && (
+          <>
+            <ManagerOnly>
+              <Button variant="outline" onClick={() => setReadingPosts(true)}>
+                <Newspaper /> Read posts
+              </Button>
+            </ManagerOnly>
+            {p.linkedinUrl && (
             <>
               <ManagerOnly>
                 <Button variant="outline" onClick={() => setFillingIn(true)} title="Their full profile: about, experience, education, skills. $0.004.">
@@ -105,12 +113,25 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
                 </a>
               </Button>
             </>
-          )
+            )}
+          </>
         }
       />
 
       {fillingIn && (
         <EnrichDialog wsId={wsId} personIds={[p.id]} onClose={() => setFillingIn(false)} onDone={() => person.reload()} />
+      )}
+      {readingPosts && (
+        <ReadPostsDialog
+          wsId={wsId}
+          personIds={[p.id]}
+          onClose={() => setReadingPosts(false)}
+          onDone={() => {
+            person.reload()
+            own.reload()
+            content.reload()
+          }}
+        />
       )}
       <Tabs defaultValue="overview" className="px-4 pb-10 md:px-8">
         <TabsList>
