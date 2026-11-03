@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { AtSign, Ban, Check, ContactRound, ExternalLink, Globe, Sparkles, UserSearch, X } from "lucide-react"
+import { AtSign, Ban, Check, ContactRound, ExternalLink, Globe, RotateCcw, Sparkles, UserSearch, X } from "lucide-react"
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
 import { ManagerOnly } from "@/components/manager-only"
@@ -96,6 +96,7 @@ export function PipelineSheet({
   onStatus,
   onFindStakeholders,
   onExcluded,
+  onReverify,
 }: {
   workspaceId: string
   company: PipelineCompany
@@ -103,6 +104,8 @@ export function PipelineSheet({
   onClose: () => void
   onStatus: (status: "qualified" | "not_fit") => void
   onFindStakeholders: () => void
+  /** Verify again with the current prompt; absent when it can't be (Lead Intel's, or never researched). */
+  onReverify?: () => void
   /** The company went on the do-not-contact list: reload it. */
   onExcluded: () => void
 }) {
@@ -143,6 +146,11 @@ export function PipelineSheet({
             {company.status !== "not_fit" && (
               <ManagerOnly><Button size="sm" variant="outline" disabled={busy} onClick={() => onStatus("not_fit")}>
                 <X /> Reject
+              </Button></ManagerOnly>
+            )}
+            {onReverify && (
+              <ManagerOnly><Button size="sm" variant="outline" disabled={busy} onClick={onReverify}>
+                <RotateCcw /> Verify again
               </Button></ManagerOnly>
             )}
             {canExclude && (

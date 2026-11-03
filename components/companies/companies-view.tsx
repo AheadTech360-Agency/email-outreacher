@@ -2,9 +2,10 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Building2, Download, FlaskConical, MapPin, Search, UserSearch } from "lucide-react"
+import { Building2, Download, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ApolloSearchDialog } from "@/components/companies/apollo-search-dialog"
 import { GoogleMapsSearchDialog } from "@/components/companies/google-maps-search-dialog"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
@@ -36,7 +37,9 @@ import {
 import { formatUsd } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-const MAX_RESEARCH = 10
+const MAX_RESEARCH = 10 // per request; bigger selections run in groups of 10
+const MAX_REVERIFY = 200
+const COST_PER_VERIFY = 0.004 // website (free), Instagram profile and Claude's score
 const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [
   { value: "all", label: "All" },
   { value: "review", label: "To approve" },
@@ -72,6 +75,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const companies = useApi(() => fetchPipeline(wsId, activeIcp?.id), [wsId, activeIcp?.id])
   const people = useApi(() => fetchStakeholders(wsId), [wsId])
   const [filter, setFilter] = useState<"all" | PipelineStatus>("all")
+  const [confirmReverify, setConfirmReverify] = useState<PipelineCompany[] | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
@@ -97,6 +101,8 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const shown = visible.slice((current - 1) * pageSize, current * pageSize)
   const picked = list.filter((c) => selected.has(c.id))
   const toResearch = picked.filter(needsResearch)
+  // Verified before (by Claude, or decided by hand): verify again with the current prompt.
+  const toReverify = picked.filter((c) => c.source !== "lead_intel" && !needsResearch(c))
   // Approve and Reject act on any verified company, so a decision can also be changed.
   const toDecide = picked.filter((c) => c.status !== "found")
   const qualified = picked.filter((c) => c.status === "qualified")
@@ -118,12 +124,24 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
 
   const research = async (targets: PipelineCompany[]) => {
     setBusy("research")
-    const id = toast.loading(`Researching ${targets.length} ${targets.length === 1 ? "company" : "companies"}… this can take a minute`)
+    const verb = targets.some((c) => c.researchedAt) ? "Verifying" : "Researching"
+    const id = toast.loading(`${verb} ${targets.length} ${targets.length === 1 ? "company" : "companies"}… this can take a minute`)
+    const total = { qualified: 0, toApprove: 0, errors: 0, costUsd: 0, notes: [] as string[] }
     try {
-      const r = await researchCompanies(wsId, targets.map((c) => c.id), true)
+      // The server takes 10 at a time; a bigger selection runs as several, one after another.
+      for (let i = 0; i < targets.length; i += MAX_RESEARCH) {
+        if (targets.length > MAX_RESEARCH) toast.loading(`${verb}: ${i} of ${targets.length} done…`, { id })
+        const r = await researchCompanies(wsId, targets.slice(i, i + MAX_RESEARCH).map((c) => c.id), true)
+        total.qualified += r.qualified
+        total.toApprove += r.toApprove
+        total.errors += r.errors
+        total.costUsd += r.costUsd
+        total.notes.push(...r.notes)
+      }
+      const r = total
       toast.success(`${r.qualified} approved, ${r.toApprove} to approve${r.errors ? `, ${r.errors} couldn't finish` : ""}`, {
         id,
-        description: [r.costUsd ? `Apify charged ${formatUsd(r.costUsd)}.` : "", ...r.notes].filter(Boolean).join(" ") || undefined,
+        description: [r.costUsd ? `Apify charged ${formatUsd(r.costUsd)}.` : "", ...new Set(r.notes)].filter(Boolean).join(" ") || undefined,
       })
       setSelected(new Set())
       companies.reload()
@@ -245,6 +263,15 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               onClick={() => void research(toResearch)}
             >
               <FlaskConical /> {busy === "research" ? "Researching…" : `Research ${toResearch.length}`}
+            </Button></ManagerOnly>
+            <ManagerOnly><Button
+              size="sm"
+              variant="outline"
+              disabled={!toReverify.length || toReverify.length > MAX_REVERIFY || !!busy}
+              title={toReverify.length > MAX_REVERIFY ? `Verify again up to ${MAX_REVERIFY} at a time` : undefined}
+              onClick={() => setConfirmReverify(toReverify)}
+            >
+              <RotateCcw /> Verify {toReverify.length} again
             </Button></ManagerOnly>
             <ManagerOnly><Button
               size="sm"
@@ -410,6 +437,18 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           }}
         />
       )}
+      <ConfirmDialog
+          open={!!confirmReverify}
+          onOpenChange={(o) => !o && setConfirmReverify(null)}
+          title={`Verify ${confirmReverify?.length ?? 0} ${confirmReverify?.length === 1 ? "company" : "companies"} again?`}
+          description={`Reads the website again and scores with the current verification prompt. The new verdict replaces the old one, including one you set by hand. About ${formatUsd((confirmReverify?.length ?? 0) * COST_PER_VERIFY)}, logged on Usage.`}
+          confirmLabel="Verify again"
+          onConfirm={() => {
+            const targets = confirmReverify ?? []
+            setConfirmReverify(null)
+            void research(targets)
+          }}
+        />
       {open && (
         <PipelineSheet
           workspaceId={wsId}
@@ -418,6 +457,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           onClose={() => setOpen(null)}
           onStatus={(status) => void changeStatus(open, status)}
           onFindStakeholders={() => setStakeholdersFor([open])}
+          onReverify={open.source !== "lead_intel" && !needsResearch(open) ? () => setConfirmReverify([open]) : undefined}
           onExcluded={() => {
             setOpen(null)
             companies.reload()
