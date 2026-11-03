@@ -432,7 +432,7 @@ function ListDetail({
                   <Checkbox aria-label={`Select ${c.name}`} checked={picked.has(c.id)} onCheckedChange={() => toggle(c.id)} />
                 </td>
                 <td className="py-2 pr-3">
-                  <div className="font-medium">{c.name}</div>
+                  <Link href={`/companies/${c.id}`} className="font-medium hover:underline">{c.name}</Link>
                   {c.domain && <div className="text-xs text-muted-foreground">{c.domain}</div>}
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">{[c.city, c.state].filter(Boolean).join(", ")}</td>
@@ -445,7 +445,7 @@ function ListDetail({
                   <Checkbox aria-label={`Select ${p.name}`} checked={picked.has(p.id)} onCheckedChange={() => toggle(p.id)} />
                 </td>
                 <td className="py-2 pr-3">
-                  <div className="font-medium">{p.name}</div>
+                  <Link href={`/people/${p.id}`} className="font-medium hover:underline">{p.name}</Link>
                   <div className="text-xs text-muted-foreground">{p.title}</div>
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">{p.company}</td>
