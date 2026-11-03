@@ -36,6 +36,7 @@ import {
   revealStakeholders,
   useApi,
 } from "@/lib/api"
+import { postsCeiling, postsSummary } from "@/lib/costs"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 
@@ -50,8 +51,6 @@ function chunks<T>(items: T[], size = BATCH): T[][] {
   for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
   return out
 }
-// Apify: about $2 per 1,000 LinkedIn posts and up to $2.70 per 1,000 Instagram posts.
-const COST_PER_POST = 0.0027
 
 function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
   // Found by the LinkedIn email search: Apify's check says how sure it is.
@@ -574,43 +573,35 @@ function FetchPostsDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  const [maxPosts, setMaxPosts] = useState("5")
+  const [maxPosts, setMaxPosts] = useState("3")
   const [days, setDays] = useState("60")
   const [running, setRunning] = useState(false)
   const n = Number(maxPosts)
   const d = Number(days)
   const bad = !(Number.isInteger(n) && n >= 1 && n <= 20) || !(Number.isInteger(d) && d >= 1 && d <= 365)
-  // Each lead can have a LinkedIn and an Instagram source.
-  const ceiling = people.length * n * 2 * COST_PER_POST
+  const ceiling = postsCeiling(people.length, n, ["linkedin", "instagram"])
 
   const [done, setDone] = useState(0)
 
   const run = async () => {
     setRunning(true)
-    let found = 0
     let fresh = 0
-    let noSource = 0
     let cost = 0
+    const all: { enough: boolean; new: number; stoppedAt: string | null }[] = []
     try {
       for (const [i, group] of chunks(people).entries()) {
         setDone(i * BATCH)
         const r = await fetchLeadPosts(wsId, { leadIds: group.map((s) => s.leadId!), maxPosts: n, maxAgeDays: d })
-        found += r.results.reduce((sum, x) => sum + (x.linkedin ?? 0) + (x.instagram ?? 0), 0)
         fresh += r.results.reduce((sum, x) => sum + x.new, 0)
-        noSource += r.results.filter((x) => x.linkedin === null && x.instagram === null).length
-        cost += r.costUsd ?? 0
+        cost += (r.costUsd ?? 0) + r.claudeCostUsd
+        all.push(...r.results)
         if (r.error) {
           toast.error("Apify refused", { description: r.error })
           onDone()
           return onClose()
         }
       }
-      toast.success(`${found} ${found === 1 ? "post" : "posts"} found, ${fresh} new`, {
-        description:
-          [cost ? `Apify charged ${formatUsd(cost)}.` : "", noSource ? `${noSource} had no LinkedIn or Instagram to read.` : ""]
-            .filter(Boolean)
-            .join(" ") || undefined,
-      })
+      toast.success(postsSummary(all), { description: `${fresh} new posts saved. ${formatUsd(cost)} with Claude's checks.` })
       onDone()
       onClose()
     } catch (e) {

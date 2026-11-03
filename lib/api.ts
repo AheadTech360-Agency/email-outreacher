@@ -646,8 +646,20 @@ export const fetchLeadPosts = (
   body: { leadIds: string[]; maxPosts: number; maxAgeDays: number; sources?: ("linkedin" | "instagram")[] },
 ) =>
   runJob<{
-    results: { leadId: string; linkedin: number | null; instagram: number | null; new: number }[]
+    results: {
+      leadId: string
+      /** Posts read per source; null when there was no profile for it or it wasn't needed. */
+      companyLinkedin: number | null
+      linkedin: number | null
+      instagram: number | null
+      new: number
+      /** Claude found enough to open an email with, at this source. */
+      enough: boolean
+      stoppedAt: "company_linkedin" | "person_linkedin" | "company_instagram" | null
+      reason: string
+    }[]
     costUsd: number | null
+    claudeCostUsd: number
     error: string | null
   }>("/posts/fetch", { workspaceId, body })
 

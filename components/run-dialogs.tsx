@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { fetchLeadPosts, generateEmails } from "@/lib/api"
-import { COST_PER_POST, FETCHED_SOURCES } from "@/lib/costs"
+import { COST_PER_POST, FETCHED_SOURCES, postsCeiling, postsSummary } from "@/lib/costs"
 import { SOURCE_LABEL, formatUsd } from "@/lib/format"
 import { resolveTemplate } from "@/lib/selectors"
 import { useStore } from "@/lib/store"
@@ -50,33 +50,29 @@ export function EnrichDialog({
   const [progress, setProgress] = useState("")
   const targets = leads.filter((l) => leadIds.includes(l.id))
   const { sources, maxPosts, maxAgeDays } = postSettings(icp, settings)
-  const withUrl = {
-    linkedin: targets.filter((l) => l.linkedinUrl).length,
-    instagram: targets.filter((l) => l.instagramUrl).length,
-  }
-  // At most: every lead with a URL has the full number of posts. Instagram can also fall back to the
-  // company's account from Lead Intel, so leads without their own may still cost a little.
-  const ceiling = sources.reduce((sum, s) => sum + withUrl[s] * maxPosts * COST_PER_POST[s], 0)
+  const ceiling = postsCeiling(targets.length, maxPosts, sources)
 
   const run = async () => {
     setRunning(true)
     let found = 0
     let cost = 0
     let error: string | null = null
+    const all: { enough: boolean; new: number; stoppedAt: string | null }[] = []
     const groups = batches(targets.map((l) => l.id))
     try {
       for (const [i, ids] of groups.entries()) {
         setProgress(groups.length > 1 ? `Batch ${i + 1} of ${groups.length}` : "")
         const r = await fetchLeadPosts(currentWorkspaceId, { leadIds: ids, maxPosts, maxAgeDays, sources: [...sources] })
         found += r.results.reduce((sum, x) => sum + x.new, 0)
-        cost += r.costUsd ?? 0
+        cost += (r.costUsd ?? 0) + r.claudeCostUsd
+        all.push(...r.results)
         if (r.error) {
           error = r.error
           break
         }
       }
       if (error) toast.error("Apify stopped the run", { description: `${error} ${found} new posts were saved before it stopped.` })
-      else toast.success(`Saved ${found} new post${found === 1 ? "" : "s"}`, { description: `Apify charged ${formatUsd(cost)}.` })
+      else toast.success(postsSummary(all), { description: `${found} new posts saved. ${formatUsd(cost)} with Claude's checks.` })
       onOpenChange(false)
     } catch (e) {
       toast.error("Couldn't fetch posts", { description: e instanceof Error ? e.message : undefined })
@@ -95,8 +91,9 @@ export function EnrichDialog({
             Fetch posts for {targets.length} lead{targets.length === 1 ? "" : "s"}
           </DialogTitle>
           <DialogDescription>
-            Their posts from the last {maxAgeDays} days, up to {maxPosts} per network, through Apify. Hook selection reads them
-            when emails are written.
+            Up to {maxPosts} posts from the last {maxAgeDays} days from each source, in order: the company&apos;s LinkedIn, their
+            own LinkedIn, then the company&apos;s Instagram. After each one Claude checks whether there&apos;s enough to write
+            with, and stops there. Every post found is used when the email is written.
           </DialogDescription>
         </DialogHeader>
         {sources.length === 0 ? (
@@ -106,15 +103,9 @@ export function EnrichDialog({
           </p>
         ) : (
           <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1.5 text-sm">
-            {sources.map((s) => (
-              <div key={s} className="contents">
-                <dt className="text-muted-foreground">{SOURCE_LABEL[s]}</dt>
-                <dd className="text-right tabular-nums">
-                  {withUrl[s]} with a profile{s === "instagram" ? " (or their company's)" : ""}
-                </dd>
-              </div>
-            ))}
-            <dt className="text-muted-foreground">Costs at most</dt>
+            <dt className="text-muted-foreground">Sources</dt>
+            <dd className="text-right">{sources.map((s) => SOURCE_LABEL[s]).join(", ")}</dd>
+            <dt className="text-muted-foreground">Costs at most (usually far less)</dt>
             <dd className="text-right font-medium tabular-nums">{formatUsd(ceiling)}</dd>
           </dl>
         )}
