@@ -8,6 +8,7 @@ import { WorkspaceGate } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
+import { Pager } from "@/components/pager"
 import { Pill } from "@/components/status"
 import { TagInput } from "@/components/tag-input"
 import { Button } from "@/components/ui/button"
@@ -212,7 +213,6 @@ function SmartLists({ wsId }: { wsId: string }) {
   )
 }
 
-const PAGE_SIZES = [25, 50, 100, 200]
 const NEW_LIST = "__new__"
 
 function ListDetail({
@@ -362,6 +362,22 @@ function ListDetail({
             {d.matching.toLocaleString()} {d.matching === 1 ? "match" : "matches"}
           </span>
         )}
+        {d.matching > d.pageSize && (
+          <div className="ml-auto flex items-center gap-2 text-sm">
+            <span className="tabular-nums text-muted-foreground">
+              {first.toLocaleString()}–{last.toLocaleString()} of {d.matching.toLocaleString()}
+            </span>
+            <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
+              <ChevronLeft />
+            </Button>
+            <span className="tabular-nums">
+              {page} / {pages}
+            </span>
+            <Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Next page">
+              <ChevronRight />
+            </Button>
+          </div>
+        )}
       </div>
 
       {picked.size > 0 && (
@@ -460,43 +476,16 @@ function ListDetail({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-        <div className="flex items-center gap-2 text-muted-foreground">
-          <span>Rows per page</span>
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => {
-              setPageSize(Number(v))
-              setPage(1)
-            }}
-          >
-            <SelectTrigger className="h-8 w-20" aria-label="Rows per page">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {PAGE_SIZES.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="tabular-nums text-muted-foreground">
-            {d.matching ? `${first.toLocaleString()}–${last.toLocaleString()} of ${d.matching.toLocaleString()}` : "0"}
-          </span>
-          <Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)} aria-label="Previous page">
-            <ChevronLeft />
-          </Button>
-          <span className="tabular-nums">
-            Page {page} of {pages}
-          </span>
-          <Button size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage(page + 1)} aria-label="Next page">
-            <ChevronRight />
-          </Button>
-        </div>
-      </div>
+      <Pager
+        page={page}
+        pageSize={pageSize}
+        total={d.matching}
+        onPage={setPage}
+        onPageSize={(n) => {
+          setPageSize(n)
+          setPage(1)
+        }}
+      />
     </section>
   )
 }
