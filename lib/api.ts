@@ -1317,6 +1317,12 @@ export const importLeadsCsv = (workspaceId: string, icpId: string, csv: string, 
 export type QuickstartStepKey = "find" | "research" | "people" | "leads" | "posts" | "write"
 
 export interface QuickstartSettings {
+  /** google_maps: search for new companies. existing: companies already here (imported) no one has written to. */
+  source?: "google_maps" | "existing"
+  /** existing: only the companies in this smart list. */
+  smartListId?: string | null
+  /** existing: look on LinkedIn at companies where no one with an email is known yet. */
+  findPeople?: boolean
   searchTerms: string[]
   places: string[]
   radiusMiles: number
@@ -1386,6 +1392,10 @@ export interface QuickstartDetail extends QuickstartRun {
 
 export const startQuickstart = (workspaceId: string, body: QuickstartSettings & { icpId: string; spendLimitUsd: number }) =>
   api<QuickstartRun>("/quickstart/runs", { workspaceId, method: "POST", body })
+
+/** What a run worked on, in a few words: its search, or the companies it was given. */
+export const runWhere = (s: QuickstartSettings) =>
+  s.source === "existing" ? "Companies you already have" : `${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
 
 export const fetchQuickstartRuns = (workspaceId: string) => api<QuickstartRun[]>("/quickstart/runs", { workspaceId })
 

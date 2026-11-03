@@ -154,7 +154,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                   <MoreHorizontal />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
+              <DropdownMenuContent align="end" className="w-64">
                 {c.status !== "qualified" && c.status !== "found" && (
                   <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => void act("approve", () => decideCompanies(wsId, [c.id], "qualified"), "Approved")}>
                     <Check /> Approve

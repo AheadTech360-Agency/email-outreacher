@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { fetchQuickstartRuns, startQuickstart, useApi } from "@/lib/api"
+import { fetchQuickstartRuns, fetchSmartLists, runWhere, startQuickstart, useApi } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import type { ICP } from "@/lib/types"
@@ -40,7 +40,7 @@ export default function QuickstartPage() {
     <>
       <PageHeader
         title="Quick Start"
-        description="From a search to ready-to-approve emails, in one go. You approve every email before anything is sent."
+        description="From a search, or the companies you imported, to ready-to-approve emails in one go. You approve every email before anything is sent."
       />
       <div className="space-y-8 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <QuickstartHome key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -65,7 +65,7 @@ function QuickstartHome({ wsId }: { wsId: string }) {
                 <span className="min-w-0 flex-1">
                   <span className="block font-medium">{r.icpName}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {r.settings.searchTerms.join(", ")} around {r.settings.places.join("; ")} · {shortDate(r.createdAt)}
+                    {runWhere(r.settings)} · {shortDate(r.createdAt)}
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">
@@ -85,6 +85,11 @@ function NewRun({ wsId }: { wsId: string }) {
   const { icps } = useStore()
   const router = useRouter()
   const ready = icps.filter((i) => i.enabled && hasOffer(i))
+  const [source, setSource] = useState<"google_maps" | "existing">("google_maps")
+  const existing = source === "existing"
+  const lists = useApi(() => fetchSmartLists(wsId, "company"), [wsId])
+  const [listId, setListId] = useState("all")
+  const [findPeople, setFindPeople] = useState(true)
   const [icpId, setIcpId] = useState("")
   const icp = icps.find((i) => i.id === icpId)
   const [terms, setTerms] = useState<string[]>([])
@@ -108,16 +113,23 @@ function NewRun({ wsId }: { wsId: string }) {
   // The most each step can cost: every company qualifies and every person becomes a lead.
   const people = num("companies") * num("people")
   const leads = Math.min(num("leads"), people)
-  const lines = [
-    { step: "Find companies (Google Maps)", cost: num("requests") * PRICE.googleRequest },
-    { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
-    {
-      step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`,
-      cost: num("companies") * PRICE.linkedinCompany + people * (findEmails ? PRICE.linkedinPersonWithEmail : PRICE.linkedinPerson),
-    },
-    { step: `Read up to ${num("posts")} posts for ${leads} leads`, cost: leads * num("posts") * PRICE.post },
+  const peopleCost = num("companies") * PRICE.linkedinCompany + people * (findEmails ? PRICE.linkedinPersonWithEmail : PRICE.linkedinPerson)
+  const lines = existing
+    ? [
+        { step: `Take ${num("companies")} of your companies (already verified)`, cost: 0 },
+        ...(findPeople
+          ? [{ step: `Find people on LinkedIn where no one has an email yet (at most)`, cost: peopleCost }]
+          : []),
+      ]
+    : [
+        { step: "Find companies (Google Maps)", cost: num("requests") * PRICE.googleRequest },
+        { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
+        { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
+      ]
+  lines.push(
+    { step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post },
     { step: `Write ${leads} emails`, cost: leads * PRICE.write },
-  ]
+  )
   // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
   const requestsNeeded = places.length + terms.length * places.length * 3
   const estimate = lines.reduce((sum, l) => sum + l.cost, 0)
@@ -125,11 +137,11 @@ function NewRun({ wsId }: { wsId: string }) {
 
   const errors = [
     !icp && "Pick an ICP",
-    !terms.length && "Add a search term",
-    !places.length && "Add a place",
-    !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
-    !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
-    !(num("companies") >= 1 && num("companies") <= 100) && "Companies to verify: 1 to 100",
+    !existing && !terms.length && "Add a search term",
+    !existing && !places.length && "Add a place",
+    !existing && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
+    !existing && !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
+    !(num("companies") >= 1 && num("companies") <= (existing ? 300 : 100)) && `Companies: 1 to ${existing ? 300 : 100}`,
     !(num("people") >= 1 && num("people") <= 10) && "People per company: 1 to 10",
     !(num("leads") >= 1 && num("leads") <= 300) && "Most leads: 1 to 300",
     !(num("posts") >= 0 && num("posts") <= 20) && "Posts per lead: 0 to 20",
@@ -141,7 +153,8 @@ function NewRun({ wsId }: { wsId: string }) {
     setStarting(true)
     try {
       const run = await startQuickstart(wsId, {
-        icpId: icp.id, searchTerms: terms, places, radiusMiles: num("radius"), googleRequests: num("requests"),
+        icpId: icp.id, source, smartListId: existing && listId !== "all" ? listId : null, findPeople,
+        searchTerms: existing ? [] : terms, places: existing ? [] : places, radiusMiles: num("radius"), googleRequests: num("requests"),
         companies: num("companies"), peoplePerCompany: num("people"), titles, findEmails, leads: num("leads"),
         onlyWithEmail, postsPerLead: num("posts"), maxPostAgeDays: icp.maxPostAgeDays ?? 60, spendLimitUsd: limit,
       })  // prettier-ignore
@@ -164,6 +177,25 @@ function NewRun({ wsId }: { wsId: string }) {
   return (
     <section className="space-y-6 rounded-lg border p-5">
       <h2 className="text-base font-semibold">New run</h2>
+
+      <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Which companies">
+        {([
+          ["google_maps", "Find new companies", "Search Google Maps, verify what it finds, then find the people there."],
+          ["existing", "Use companies I already have", "The ones you imported: already verified, and their people came with them."],
+        ] as const).map(([key, title, hint]) => (
+          <button
+            key={key}
+            type="button"
+            role="radio"
+            aria-checked={source === key}
+            onClick={() => setSource(key)}
+            className={`rounded-lg border p-3 text-left transition-colors ${source === key ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+          >
+            <span className="block text-sm font-medium">{title}</span>
+            <span className="block text-xs text-muted-foreground">{hint}</span>
+          </button>
+        ))}
+      </div>
 
       <div className="space-y-1.5">
         <Label>1. Who are you after?</Label>
@@ -189,6 +221,27 @@ function NewRun({ wsId }: { wsId: string }) {
         </p>
       </div>
 
+      {existing ? (
+        <div className="space-y-1.5">
+          <Label>2. Which of your companies</Label>
+          <Select value={listId} onValueChange={setListId}>
+            <SelectTrigger className="w-full! sm:w-80!" aria-label="Smart list">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All of this ICP&apos;s companies</SelectItem>
+              {(lists.data?.lists ?? []).map((l) => (
+                <SelectItem key={l.id} value={l.id}>
+                  Only the smart list {l.name} ({l.count.toLocaleString()})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Only companies no one has written to yet, best score first. Each run picks up where the last one stopped.
+          </p>
+        </div>
+      ) : (
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="qs-terms">2. What to search Google Maps for</Label>
@@ -203,23 +256,27 @@ function NewRun({ wsId }: { wsId: string }) {
           </p>
         </div>
       </div>
+      )}
 
       <div>
         <p className="mb-3 text-sm font-medium">3. How much of each step</p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {number("radius", "Radius (miles)", "1 to 50, around each city. A state or country is searched in full.")}
-          {number(
-            "requests",
-            "Google requests",
-            num("requests") < requestsNeeded
-              ? `Too few for ${terms.length * places.length} searches: about ${requestsNeeded} lets each one run.`
-              : "Each finds up to 20 businesses.",
-            num("requests") < requestsNeeded,
-          )}
-          {number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
-          {number("people", "People per company", "Found on LinkedIn.")}
-          {number("leads", "Most leads", "People who get an email.")}
-          {number("posts", "Posts per lead", "0 writes without posts.")}
+          {!existing && number("radius", "Radius (miles)", "1 to 50, around each city. A state or country is searched in full.")}
+          {!existing &&
+            number(
+              "requests",
+              "Google requests",
+              num("requests") < requestsNeeded
+                ? `Too few for ${terms.length * places.length} searches: about ${requestsNeeded} lets each one run.`
+                : "Each finds up to 20 businesses.",
+              num("requests") < requestsNeeded,
+            )}
+          {existing
+            ? number("companies", "Companies", "Up to 300 a run. The rest wait for the next one.")
+            : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
+          {number("people", "People per company", existing ? "Those with an email first." : "Found on LinkedIn.")}
+          {number("leads", "Most emails", "People who get an email.")}
+          {number("posts", "Posts per person", "0 writes without posts.")}
         </div>
       </div>
 
@@ -230,6 +287,12 @@ function NewRun({ wsId }: { wsId: string }) {
           <p className="text-xs text-muted-foreground">From the ICP. Empty: owners, founders, CEOs, presidents and general managers.</p>
         </div>
         <div className="space-y-3 pt-6">
+          {existing && (
+            <Label className="flex cursor-pointer items-start gap-2 font-normal">
+              <Checkbox checked={findPeople} onCheckedChange={(v) => setFindPeople(v === true)} className="mt-0.5" />
+              <span>Look on LinkedIn at companies where no one has an email yet</span>
+            </Label>
+          )}
           <Label className="flex cursor-pointer items-start gap-2 font-normal">
             <Checkbox checked={findEmails} onCheckedChange={(v) => setFindEmails(v === true)} className="mt-0.5" />
             <span>Find their work emails ($0.012 a person instead of $0.003)</span>
@@ -251,7 +314,7 @@ function NewRun({ wsId }: { wsId: string }) {
             </div>
           ))}
           <div className="flex justify-between px-3 py-1.5 font-medium">
-            <span>At most, if every company qualifies</span>
+            <span>{existing ? "At most" : "At most, if every company qualifies"}</span>
             <span className="tabular-nums">{formatUsd(estimate)}</span>
           </div>
         </div>

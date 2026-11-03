@@ -21,6 +21,7 @@ import {
   queueEmails,
   decideCompanies,
   resumeQuickstart,
+  runWhere,
   stopQuickstart,
   updateEmail,
   useApi,
@@ -30,7 +31,7 @@ import { formatUsd, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
-  { key: "find", label: "Find companies", what: "Google Maps search for your terms around your places" },
+  { key: "find", label: "Find companies", what: "A Google Maps search, or the companies you already have" },
   { key: "research", label: "Verify companies", what: "Reads each website and Instagram, checks the ICP's rule, scores the fit" },
   { key: "people", label: "Find people and emails", what: "LinkedIn search at the qualified companies, with work emails" },
   { key: "leads", label: "Make leads", what: "The people found become leads" },
@@ -101,7 +102,7 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
     <>
       <PageHeader
         title={`Quick Start: ${r.icpName}`}
-        description={`${r.settings.searchTerms.join(", ")} around ${r.settings.places.join("; ")} · started ${shortDate(r.createdAt)}`}
+        description={`${runWhere(r.settings)} · started ${shortDate(r.createdAt)}`}
         actions={<Controls wsId={wsId} run={r} live={live} onChanged={run.reload} />}
       />
       <div className="space-y-8 px-4 pb-10 md:px-8">
