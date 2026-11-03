@@ -1512,6 +1512,7 @@ export interface ImportRunResult {
   companiesAdded: number
   duplicatesInFile: number
   errors: { row: number; reason: string }[]
+  enriched: EnrichResult | null
   companiesSorted: SortListsResult | null
   peopleSorted: SortListsResult | null
   costUsd: number
@@ -1525,4 +1526,32 @@ export const importPeopleRun = (
   icpId: string | null,
   sort: boolean,
   onUpdate?: (job: Job) => void,
-) => runJob<ImportRunResult>("/stakeholders/import-run", { workspaceId, body: { csv, icpId, sort } }, onUpdate)
+  enrich?: { website: boolean; instagram: boolean; linkedin: boolean; peopleLinkedin: boolean },
+) => runJob<ImportRunResult>("/stakeholders/import-run", { workspaceId, body: { csv, icpId, sort, enrich } }, onUpdate)
+
+// ---------- Filling in verified companies and people (no Claude) ----------
+
+export interface EnrichResult {
+  sitesRead: number
+  sitesFailed: number
+  instagram: number
+  linkedinCompanies: number
+  linkedinPeople: number
+  postsSaved: number
+  costUsd: number
+  errors: string[]
+}
+
+export interface EnrichOptions {
+  website: boolean
+  instagram: boolean
+  linkedin: boolean
+}
+
+/** Their website (free), Instagram profile and LinkedIn company page (paid), as chosen. A background job. */
+export const enrichCompanies = (workspaceId: string, companyIds: string[], opts: EnrichOptions, onUpdate?: (job: Job) => void) =>
+  runJob<EnrichResult>("/pipeline/enrich", { workspaceId, body: { companyIds, ...opts } }, onUpdate)
+
+/** Their full LinkedIn profiles, $0.004 each. A background job. */
+export const enrichPeople = (workspaceId: string, stakeholderIds: string[], onUpdate?: (job: Job) => void) =>
+  runJob<EnrichResult>("/stakeholders/enrich", { workspaceId, body: { stakeholderIds } }, onUpdate)

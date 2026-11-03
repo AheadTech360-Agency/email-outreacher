@@ -3,10 +3,11 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Building2, Download, FileDown, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
+import { Building2, DatabaseZap, Download, FileDown, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { EnrichDialog } from "@/components/enrich-dialog"
 import { ApolloSearchDialog } from "@/components/companies/apollo-search-dialog"
 import { GoogleMapsSearchDialog } from "@/components/companies/google-maps-search-dialog"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
@@ -76,6 +77,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const people = useApi(() => fetchStakeholders(wsId), [wsId])
   const [filter, setFilter] = useState<"all" | PipelineStatus>("all")
   const [confirmReverify, setConfirmReverify] = useState<PipelineCompany[] | null>(null)
+  const [fillingIn, setFillingIn] = useState<string[] | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
@@ -285,6 +287,9 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             >
               {busy === "qualified" ? "Approving…" : `Approve ${toDecide.length}`}
             </Button></ManagerOnly>
+            <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy} onClick={() => setFillingIn(picked.map((c) => c.id))}>
+              <DatabaseZap /> Fill in {picked.length}
+            </Button></ManagerOnly>
             <ManagerOnly><Button size="sm" disabled={!qualified.length || !!busy} onClick={() => setStakeholdersFor(qualified)}>
               <UserSearch /> Find stakeholders at {qualified.length}
             </Button></ManagerOnly>
@@ -442,6 +447,17 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           onDone={() => {
             setSelected(new Set())
             people.reload()
+          }}
+        />
+      )}
+      {fillingIn && (
+        <EnrichDialog
+          wsId={wsId}
+          companyIds={fillingIn}
+          onClose={() => setFillingIn(null)}
+          onDone={() => {
+            setSelected(new Set())
+            companies.reload()
           }}
         />
       )}

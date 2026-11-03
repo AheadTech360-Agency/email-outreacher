@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { Download, FileUp, UserPlus } from "lucide-react"
 import { toast } from "sonner"
+import { EnrichChoices, NO_ENRICH } from "@/components/enrich-dialog"
 import { ImportProgress, ImportSummary } from "@/components/people/import-progress"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -190,6 +191,7 @@ export function ImportPeopleDialog({
   const { me } = useAuth()
   const manager = canManage(me?.role)
   const [sort, setSort] = useState(manager)
+  const [fill, setFill] = useState(NO_ENRICH)
   const [job, setJob] = useState<Job | null>(null)
   const [result, setResult] = useState<ImportRunResult | null>(null)
   const icpId = icp === NO_ICP ? null : icp
@@ -220,7 +222,9 @@ export function ImportPeopleDialog({
     setJob(null)
     const sorting = sort && manager
     try {
-      const r = await importPeopleRun(workspaceId, file.text, icpId, sorting, setJob)
+      const r = await importPeopleRun(workspaceId, file.text, icpId, sorting, setJob, manager
+        ? { website: fill.website, instagram: fill.instagram, linkedin: fill.linkedin, peopleLinkedin: fill.people }
+        : undefined)
       setResult(r)
       onImported()
     } catch (e) {
@@ -249,7 +253,15 @@ export function ImportPeopleDialog({
         {result ? (
           <ImportSummary r={result} />
         ) : busy === "import" ? (
-          <ImportProgress job={job} sorting={sort && manager} rows={preview?.valid ?? 0} />
+          <ImportProgress
+            job={job}
+            sorting={sort && manager}
+            enriching={manager ? [
+              fill.website && "Reading websites", fill.instagram && "Reading Instagram profiles",
+              fill.linkedin && "Reading LinkedIn company pages", fill.people && "Reading LinkedIn profiles",
+            ].filter((x): x is string => !!x) : []}
+            rows={preview?.valid ?? 0}
+          />
         ) : (
         <div className="space-y-4">
           <Button variant="outline" size="sm" onClick={() => void downloadTemplate("people").catch((e) => toast.error(e.message))}>
@@ -290,6 +302,15 @@ export function ImportPeopleDialog({
                   ))}
                 </ul>
               )}
+            </div>
+          )}
+          {preview && preview.valid > 0 && manager && (
+            <div className="space-y-2 rounded-md border px-3 py-3">
+              <p className="text-sm font-medium">Fill them in (each one optional)</p>
+              <p className="text-xs text-muted-foreground">
+                Imported companies count as verified, so nothing is judged again. Up to {preview.valid.toLocaleString()} companies.
+              </p>
+              <EnrichChoices companies={preview.valid} people={preview.valid} value={fill} onChange={setFill} />
             </div>
           )}
           {preview && preview.valid > 0 && (

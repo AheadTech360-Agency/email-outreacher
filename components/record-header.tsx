@@ -140,7 +140,7 @@ export function DataGroup({ title, values }: { title: string; values: Record<str
         {entries.map(([label, value]) => (
           <div key={label} className="contents">
             <dt className="text-muted-foreground">{label}</dt>
-            <dd className="min-w-0 break-words">
+            <dd className="min-w-0 break-words whitespace-pre-line">
               <Value label={label} value={value} />
             </dd>
           </div>

@@ -37,3 +37,26 @@ export function postsSummary(results: { enough: boolean; new: number; stoppedAt:
   ].filter(Boolean)
   return `Enough to write with for ${enough} of ${results.length}${parts.length ? ` (${parts.join(", ")})` : ""}.`
 }
+
+/** Filling in companies and people (Apify's published prices). Websites are read for free. */
+export const ENRICH_COST = { instagram: 0.0023, linkedinCompany: 0.004, linkedinProfile: 0.004 }
+
+/** Summed up for a toast. */
+export function enrichSummary(r: {
+  sitesRead: number
+  sitesFailed: number
+  instagram: number
+  linkedinCompanies: number
+  linkedinPeople: number
+  postsSaved: number
+}): string {
+  return [
+    r.sitesRead || r.sitesFailed ? `${r.sitesRead} websites read${r.sitesFailed ? `, ${r.sitesFailed} couldn't be` : ""}` : "",
+    r.instagram ? `${r.instagram} Instagram profiles` : "",
+    r.linkedinCompanies ? `${r.linkedinCompanies} LinkedIn pages` : "",
+    r.linkedinPeople ? `${r.linkedinPeople} LinkedIn profiles` : "",
+    r.postsSaved ? `${r.postsSaved} posts saved` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ") || "Nothing new to fill in"
+}

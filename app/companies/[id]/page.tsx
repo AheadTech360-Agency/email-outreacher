@@ -2,13 +2,14 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
-import { Ban, Check, ExternalLink, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
+import { Ban, Check, DatabaseZap, ExternalLink, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { EnrichDialog } from "@/components/enrich-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill } from "@/components/status"
@@ -49,6 +50,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
   const [finding, setFinding] = useState(false)
   const [reverifying, setReverifying] = useState(false)
   const [excluding, setExcluding] = useState(false)
+  const [fillingIn, setFillingIn] = useState(false)
 
   if (company.error && !company.data)
     return (
@@ -166,6 +168,9 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                     <X /> Reject
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setFillingIn(true)}>
+                  <DatabaseZap /> Fill in (Instagram, LinkedIn{here.length ? ", people" : ""})
+                </DropdownMenuItem>
                 {canVerify && c.researchedAt && (
                   <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setReverifying(true)}>
                     <RotateCcw /> Verify again
@@ -293,6 +298,19 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
           }}
         />
       )}
+      {fillingIn && (
+        <EnrichDialog
+          wsId={wsId}
+          companyIds={[c.id]}
+          personIds={here.filter((p) => p.linkedinUrl).map((p) => p.id)}
+          onClose={() => setFillingIn(false)}
+          onDone={() => {
+            company.reload()
+            content.reload()
+            people.reload()
+          }}
+        />
+      )}
       {excluding && (
         <ExcludeCompanyDialog workspaceId={wsId} company={c} onClose={() => setExcluding(false)} onExcluded={() => router.push("/companies")} />
       )}
@@ -315,7 +333,7 @@ function Verdict({ company: c }: { company: PipelineCompany }) {
   const score = c.scoreDetail
   return (
     <Block title="Why it's here">
-      {!c.researchedAt && c.source !== "lead_intel" ? (
+      {!c.researchedAt && c.status === "found" ? (
         <p className="text-sm text-muted-foreground">Not verified yet. Verify reads its website and scores how well it fits the ICP.</p>
       ) : (
         <div className="space-y-4 text-sm">

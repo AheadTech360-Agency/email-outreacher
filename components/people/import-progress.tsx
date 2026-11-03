@@ -4,13 +4,18 @@ import Link from "next/link"
 import { Check, Circle, Loader2 } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import type { ImportRunResult, Job, SortListsResult } from "@/lib/api"
+import { enrichSummary } from "@/lib/costs"
 import { formatUsd } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 /** The import job's steps, by the step names the backend reports (routers/stakeholders.import_run). */
-const STEPS: { step: string; label: string; sorting?: boolean }[] = [
+const STEPS: { step: string; label: string; sorting?: boolean; enrich?: boolean }[] = [
   { step: "Reading the file", label: "Reading the file" },
   { step: "Saving people", label: "Saving people, their leads and companies" },
+  { step: "Reading websites", label: "Reading company websites", enrich: true },
+  { step: "Reading Instagram profiles", label: "Reading Instagram profiles", enrich: true },
+  { step: "Reading LinkedIn company pages", label: "Reading LinkedIn company pages", enrich: true },
+  { step: "Reading LinkedIn profiles", label: "Reading people's LinkedIn profiles", enrich: true },
   { step: "Reading websites (companies)", label: "Reading company websites", sorting: true },
   { step: "Sorting with Claude (companies)", label: "Sorting companies into ICPs and smart lists", sorting: true },
   { step: "Drafting ICPs (companies)", label: "Drafting ICPs for new lists no ICP fits", sorting: true },
@@ -19,8 +24,8 @@ const STEPS: { step: string; label: string; sorting?: boolean }[] = [
 
 const n = (x: number) => x.toLocaleString()
 
-export function ImportProgress({ job, sorting, rows }: { job: Job | null; sorting: boolean; rows: number }) {
-  const steps = STEPS.filter((s) => sorting || !s.sorting)
+export function ImportProgress({ job, sorting, enriching = [], rows }: { job: Job | null; sorting: boolean; enriching?: string[]; rows: number }) {
+  const steps = STEPS.filter((s) => (sorting || !s.sorting) && (!s.enrich || enriching.includes(s.step)))
   const at = steps.findIndex((s) => s.step === job?.step)
   const current = at >= 0 ? steps[at] : null
   const saved = job?.step === "Saving people" ? job.done : at > 1 ? rows : 0
@@ -85,6 +90,13 @@ export function ImportSummary({ r }: { r: ImportRunResult }) {
   const sorted = r.companiesSorted || r.peopleSorted
   return (
     <div className="space-y-3 text-sm">
+      {r.enriched && (
+        <div className="rounded-md border px-3 py-3">
+          <p className="font-medium">Filled in · {formatUsd(r.enriched.costUsd)}</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">{enrichSummary(r.enriched)}</p>
+          {r.enriched.errors.length > 0 && <p className="text-[13px] text-destructive">Stopped early: {r.enriched.errors[0]}</p>}
+        </div>
+      )}
       <div className="rounded-md border px-3 py-3">
         <p className="font-medium tabular-nums">
           {n(r.added + r.updated)} of {n(r.totalRows)} rows imported

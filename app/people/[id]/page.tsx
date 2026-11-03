@@ -2,8 +2,11 @@
 
 import Link from "next/link"
 import { useParams } from "next/navigation"
-import { ArrowRight, ExternalLink } from "lucide-react"
+import { useState } from "react"
+import { ArrowRight, DatabaseZap, ExternalLink } from "lucide-react"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { EnrichDialog } from "@/components/enrich-dialog"
+import { ManagerOnly } from "@/components/manager-only"
 import { StatusPill } from "@/components/companies/pipeline-cells"
 import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill, type PillTone } from "@/components/status"
@@ -37,6 +40,7 @@ export default function PersonPage() {
 
 function Person({ wsId, id }: { wsId: string; id: string }) {
   const person = useApi(() => fetchStakeholder(wsId, id), [wsId, id])
+  const [fillingIn, setFillingIn] = useState(false)
   const p = person.data
   const companyId = p?.pipelineCompanyId ?? null
   const leadId = p?.leadId ?? null
@@ -89,15 +93,25 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
         ]}
         actions={
           p.linkedinUrl && (
-            <Button variant="outline" asChild>
-              <a href={p.linkedinUrl} target="_blank" rel="noreferrer">
-                LinkedIn <ExternalLink />
-              </a>
-            </Button>
+            <>
+              <ManagerOnly>
+                <Button variant="outline" onClick={() => setFillingIn(true)} title="Their full profile: about, experience, education, skills. $0.004.">
+                  <DatabaseZap /> {data["LinkedIn profile"] ? "Read LinkedIn again" : "Get LinkedIn profile"}
+                </Button>
+              </ManagerOnly>
+              <Button variant="outline" asChild>
+                <a href={p.linkedinUrl} target="_blank" rel="noreferrer">
+                  LinkedIn <ExternalLink />
+                </a>
+              </Button>
+            </>
           )
         }
       />
 
+      {fillingIn && (
+        <EnrichDialog wsId={wsId} personIds={[p.id]} onClose={() => setFillingIn(false)} onDone={() => person.reload()} />
+      )}
       <Tabs defaultValue="overview" className="px-4 pb-10 md:px-8">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>

@@ -3,10 +3,11 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
+import { DatabaseZap, Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
+import { EnrichDialog } from "@/components/enrich-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
@@ -112,6 +113,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmingReveal, setConfirmingReveal] = useState(false)
   const [confirmingWrite, setConfirmingWrite] = useState(false)
+  const [fillingIn, setFillingIn] = useState(false)
   const [fetchingPosts, setFetchingPosts] = useState(false)
   const [adding, setAdding] = useState<"one" | "csv" | null>(null)
   const [busy, setBusy] = useState("")
@@ -157,6 +159,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   // People who already have an email (from the LinkedIn email search) aren't revealed again: that would spend a credit.
   const toReveal = picked.filter((s) => !s.revealedAt && !s.email)
   const toAdd = picked.filter(canBeLead)
+  const withLinkedin = picked.filter((s) => s.linkedinUrl)
   const withLead = picked.filter((s) => s.leadId)
   const allChecked = shown.length > 0 && shown.every((s) => selected.has(s.id))
   const allShownPicked = visible.length > 0 && visible.every((s) => selected.has(s.id))
@@ -353,6 +356,15 @@ function PeopleList({ wsId }: { wsId: string }) {
             <ManagerOnly><Button
               size="sm"
               variant="outline"
+              disabled={!withLinkedin.length || !!busy}
+              title="Their full LinkedIn profiles: about, experience, education, skills"
+              onClick={() => setFillingIn(true)}
+            >
+              <DatabaseZap /> Fill in {withLinkedin.length}
+            </Button></ManagerOnly>
+            <ManagerOnly><Button
+              size="sm"
+              variant="outline"
               disabled={!withLead.length || withLead.length > MAX_LEADS || !!busy}
               title={withLead.length > MAX_LEADS ? `Fetch posts for up to ${MAX_LEADS} leads at a time` : undefined}
               onClick={() => setFetchingPosts(true)}
@@ -525,6 +537,17 @@ function PeopleList({ wsId }: { wsId: string }) {
         </div>
       )}
 
+      {fillingIn && (
+        <EnrichDialog
+          wsId={wsId}
+          personIds={withLinkedin.map((s) => s.id)}
+          onClose={() => setFillingIn(false)}
+          onDone={() => {
+            setSelected(new Set())
+            people.reload()
+          }}
+        />
+      )}
       {adding === "one" && (
         <AddPersonDialog workspaceId={wsId} icps={icps.data ?? []} onClose={() => setAdding(null)} onAdded={people.reload} />
       )}
