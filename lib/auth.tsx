@@ -100,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error(`${saved.email}'s sign-in has expired. Add it again with its password.`)
     }
     // A full reload, so no data, workspace or cache from the previous account carries over.
-    reloadAt("/icps")
+    reloadAt("/home")
   }, [])
 
   const signOut = useCallback(async () => {

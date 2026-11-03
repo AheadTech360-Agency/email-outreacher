@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, type CSSProperties } from "react"
-import { Building2, Calculator, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
+import { Building2, Calculator, House, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -77,6 +77,7 @@ export function AppSidebar() {
     {
       label: "",
       items: [
+        { href: "/home", label: "Home", icon: House },
         { href: "/quickstart", label: "Quick Start", icon: Rocket },
         { href: "/companies", label: "Companies", icon: Building2 },
         { href: "/people", label: "People", icon: UserSearch },
@@ -126,7 +127,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 px-2 pt-3">
         <Link
-          href="/quickstart"
+          href="/home"
           className="flex min-w-0 items-center gap-2.5 rounded-md px-1.5 py-1 group-data-[collapsible=icon]:px-1"
         >
           <ColdbrewMark />

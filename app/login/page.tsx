@@ -22,7 +22,7 @@ function Login() {
   const { session, signIn } = useAuth()
   const router = useRouter()
   const params = useSearchParams()
-  const next = params.get("next")?.startsWith("/") ? params.get("next")! : "/icps"
+  const next = params.get("next")?.startsWith("/") ? params.get("next")! : "/home"
   // Adding another account: the current one stays signed in on this browser until you switch back.
   const adding = params.get("add") === "1"
   const [email, setEmail] = useState("")

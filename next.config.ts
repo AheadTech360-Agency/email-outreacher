@@ -36,7 +36,7 @@ const nextConfig: NextConfig = {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
   async redirects() {
-    return [{ source: "/", destination: "/icps", permanent: false }];
+    return [{ source: "/", destination: "/home", permanent: false }];
   },
   turbopack: {
     rules: {

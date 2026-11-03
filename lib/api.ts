@@ -1493,6 +1493,34 @@ export const sortSmartLists = (workspaceId: string, kind: SmartListKind, limit: 
 export const renameSmartList = (workspaceId: string, id: string, name: string) =>
   api<SmartList>(`/smart-lists/${id}`, { workspaceId, method: "PATCH", body: { name } })
 
+/** Give a company list an existing ICP: its companies without one (and their people) go under it. */
+export const setSmartListIcp = (workspaceId: string, id: string, leadIntelIcpId: string) =>
+  api<SmartList>(`/smart-lists/${id}`, { workspaceId, method: "PATCH", body: { leadIntelIcpId } })
+
+/** Where each person sits: the furthest their first email got. */
+export type HomeStage = "no_email" | "ready" | "review" | "approved" | "queued" | "sent" | "replied"
+
+export interface HomeData {
+  todo: {
+    companiesNoIcp: number
+    companiesToApprove: number
+    companiesToVerify: number
+    companiesNoPeople: number
+    peopleNoEmail: number
+    draftsToReview: number
+    approvedNotQueued: number
+    runsWaiting: number
+    draftIcps: number
+    replies: number
+  }
+  /** Companies with no ICP, by smart list (listId null: not sorted into one). */
+  noIcp: { listId: string | null; name: string | null; count: number; hasDraft: boolean }[]
+  stages: Partial<Record<HomeStage, number>>
+  icps: { icpId: string | null; companies: Record<string, number>; people: Partial<Record<HomeStage, number>> }[]
+}
+
+export const fetchHome = (workspaceId: string) => api<HomeData>("/home", { workspaceId })
+
 export const draftSmartListIcp = (workspaceId: string, id: string) =>
   api<SmartList>(`/smart-lists/${id}/draft-icp`, { workspaceId, method: "POST" })
 
