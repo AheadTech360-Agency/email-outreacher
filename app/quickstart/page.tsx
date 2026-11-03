@@ -40,7 +40,7 @@ export default function QuickstartPage() {
     <>
       <PageHeader
         title="Quick Start"
-        description="Pick an ICP and how much of each step. Coldbrew finds companies on Google Maps, verifies them, finds the right people and their emails, reads their posts and writes each email. You approve every email before anything is queued."
+        description="From a search to ready-to-approve emails, in one go. You approve every email before anything is sent."
       />
       <div className="space-y-8 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <QuickstartHome key={wsId} wsId={wsId} />}</WorkspaceGate>

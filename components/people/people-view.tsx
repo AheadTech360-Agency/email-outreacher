@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
-import { DatabaseZap, Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
+import { ChevronDown, DatabaseZap, Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -18,6 +18,7 @@ import { PostsSheet } from "@/components/people/posts-sheet"
 import { Pill, type PillTone } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -36,6 +37,8 @@ import {
   useApi,
 } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
+import { useAuth } from "@/lib/auth"
+import { canManage } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 
 const MAX_REVEAL = 25
@@ -70,18 +73,14 @@ function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
 /** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
 const isVerified = (s: Stakeholder) => !!s.email && ["verified", "valid"].includes((s.emailStatus ?? "").toLowerCase())
 
-/** Unrevealed Apollo people only have a masked name and no contact, so they need revealing first. */
-const canBeLead = (s: Stakeholder) => !s.leadId && !!(s.linkedinUrl || s.email) && !(s.source === "apollo" && !s.revealedAt)
 
 /** Everyone found for this workspace, by company, ICP or LinkedIn, and turning them into leads with posts. */
 export function PeopleView() {
-  const { currentWorkspaceId, workspaces } = useStore()
-  const workspace = workspaces.find((w) => w.id === currentWorkspaceId)
   return (
     <>
       <PageHeader
         title="People"
-        description={`Stakeholders found for ${workspace?.name ?? "this workspace"}. Make them leads, fetch their posts, and reveal emails.`}
+        description="The people you could email. Select them, then write their emails."
       />
       <div className="space-y-4 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <PeopleList key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -92,6 +91,7 @@ export function PeopleView() {
 
 function PeopleList({ wsId }: { wsId: string }) {
   const router = useRouter()
+  const { me } = useAuth()
   const people = useApi(() => fetchAllStakeholders(wsId), [wsId])
   // Adding, importing and revealing people can make leads, and fetching changes post counts, so the
   // shared leads list reloads whenever this list does.
@@ -155,12 +155,30 @@ function PeopleList({ wsId }: { wsId: string }) {
   const picked = list.filter((s) => selected.has(s.id))
   // People who already have an email (from the LinkedIn email search) aren't revealed again: that would spend a credit.
   const toReveal = picked.filter((s) => !s.revealedAt && !s.email)
-  const toAdd = picked.filter(canBeLead)
   const withLinkedin = picked.filter((s) => s.linkedinUrl)
-  const withLead = picked.filter((s) => s.leadId)
+  // Who an email can be written for: anyone with an address.
+  const writable = picked.filter((s) => s.email)
   const allChecked = shown.length > 0 && shown.every((s) => selected.has(s.id))
   const allShownPicked = visible.length > 0 && visible.every((s) => selected.has(s.id))
   const filtering = !!q || foundBy !== "all" || status !== "all" || emailFilter !== "all"
+
+  const actions = [
+    { key: "write", label: `Write emails for ${writable.length}`, doing: "Writing…", busy: "write", icon: Sparkles,
+      disabled: !writable.length || writable.length > MAX_LEADS,
+      title: writable.length > MAX_LEADS ? `Up to ${MAX_LEADS} at a time` : "Claude writes one email each; they wait in Emails to review",
+      run: () => (writable.length > BATCH ? setConfirmingWrite(true) : void writeEmails()) },
+    { key: "reveal", label: `Reveal ${toReveal.length} ${toReveal.length === 1 ? "email" : "emails"}`, doing: "Revealing…", busy: "reveal",
+      icon: MailCheck, disabled: !toReveal.length || toReveal.length > MAX_REVEAL, title: "Uses Apollo credits",
+      run: () => setConfirmingReveal(true) },
+    { key: "posts", label: `Read posts for ${picked.length}`, doing: "", busy: "", icon: Newspaper,
+      disabled: picked.length > MAX_LEADS, title: undefined, run: () => setFetchingPosts(true) },
+    { key: "fill", label: `Get LinkedIn profiles for ${withLinkedin.length}`, doing: "", busy: "", icon: DatabaseZap,
+      disabled: !withLinkedin.length, title: undefined, run: () => setFillingIn(true) },
+  ]  // prettier-ignore
+  // The next step: write to whoever has an email; otherwise find their emails.
+  const nextKey = writable.length ? "write" : toReveal.length ? "reveal" : null
+  const next = actions.find((a) => a.key === nextKey)
+  const more = actions.filter((a) => a.key !== nextKey)
 
   const toggle = (id: string, on: boolean) =>
     setSelected((set) => {
@@ -196,7 +214,20 @@ function PeopleList({ wsId }: { wsId: string }) {
   // Hook selection then email generation for each lead, on its ICP's prompts. Drafts go to Review.
   const writeEmails = async () => {
     setBusy("write")
-    const ids = withLead.map((s) => s.leadId!)
+    // Anyone with an email gets the working record their drafts are kept on (not a lead until it's queued).
+    const missing = writable.filter((s) => !s.leadId).map((s) => s.id)
+    let ids = writable.filter((s) => s.leadId).map((s) => s.leadId!)
+    if (missing.length) {
+      try {
+        for (const group of chunks(missing, 100)) await addAsLeads(wsId, group)
+        const fresh = await fetchAllStakeholders(wsId)
+        const byId = new Map(fresh.map((x) => [x.id, x.leadId]))
+        ids = writable.map((s) => byId.get(s.id) ?? s.leadId).filter((x): x is string => !!x)
+      } catch (e) {
+        toast.error("Couldn't get them ready", { description: e instanceof Error ? e.message : undefined })
+        return setBusy("")
+      }
+    }
     const id = toast.loading(`Writing ${ids.length} ${ids.length === 1 ? "email" : "emails"}… this can take a few minutes`)
     let drafted = 0
     let cost = 0
@@ -219,22 +250,6 @@ function PeopleList({ wsId }: { wsId: string }) {
     } catch (e) {
       // What was written before the failure is kept in Review.
       toast.error(drafted ? `Stopped after ${drafted} drafted` : "Couldn't write them", { id, description: e instanceof Error ? e.message : undefined })
-    } finally {
-      setBusy("")
-    }
-  }
-
-  const addLeads = async () => {
-    setBusy("add")
-    try {
-      const r = await addAsLeads(wsId, toAdd.map((s) => s.id))
-      toast.success(`${r.added} added as ${r.added === 1 ? "a lead" : "leads"}`, {
-        description: r.linkedExisting ? `${r.linkedExisting} were already leads and are now linked.` : undefined,
-      })
-      setSelected(new Set())
-      people.reload()
-    } catch (e) {
-      toast.error("Couldn't add them", { description: e instanceof Error ? e.message : undefined })
     } finally {
       setBusy("")
     }
@@ -326,9 +341,6 @@ function PeopleList({ wsId }: { wsId: string }) {
           </Button>
         )}
         <div className="flex flex-wrap gap-2 sm:ml-auto">
-          <Button size="sm" variant="outline" onClick={() => setAdding("csv")}>
-            <FileUp /> Import CSV
-          </Button>
           <Button
             size="sm"
             variant="outline"
@@ -337,54 +349,53 @@ function PeopleList({ wsId }: { wsId: string }) {
           >
             <Download /> Export
           </Button>
-          <Button size="sm" variant="outline" onClick={() => setAdding("one")}>
-            <UserPlus /> Add a person
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm">
+                <UserPlus /> Add people <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={() => setAdding("csv")}>
+                <FileUp /> Import a CSV (from Apollo)
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setAdding("one")}>
+                <UserPlus /> Add one person
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
           <div className="ml-auto flex flex-wrap gap-2">
-            <Button size="sm" variant="outline" disabled={!toAdd.length || !!busy} onClick={() => void addLeads()}>
-              <UserPlus /> {busy === "add" ? "Adding…" : `Add ${toAdd.length} as leads`}
-            </Button>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!withLinkedin.length || !!busy}
-              title="Their full LinkedIn profiles: about, experience, education, skills"
-              onClick={() => setFillingIn(true)}
-            >
-              <DatabaseZap /> Fill in {withLinkedin.length}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!picked.length || picked.length > MAX_LEADS || !!busy}
-              title={picked.length > MAX_LEADS ? `Read posts for up to ${MAX_LEADS} at a time` : "Company LinkedIn, their LinkedIn, company Instagram"}
-              onClick={() => setFetchingPosts(true)}
-            >
-              <Newspaper /> Read posts for {picked.length}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!withLead.length || withLead.length > MAX_LEADS || !!busy}
-              title={withLead.length > MAX_LEADS ? `Write emails for up to ${MAX_LEADS} leads at a time` : undefined}
-              onClick={() => (withLead.length > BATCH ? setConfirmingWrite(true) : void writeEmails())}
-            >
-              <Sparkles /> {busy === "write" ? "Writing…" : `Write emails for ${withLead.length}`}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              disabled={!toReveal.length || toReveal.length > MAX_REVEAL || !!busy}
-              title={toReveal.length > MAX_REVEAL ? `Reveal up to ${MAX_REVEAL} at a time` : undefined}
-              onClick={() => setConfirmingReveal(true)}
-            >
-              <MailCheck /> {busy === "reveal" ? "Revealing…" : `Reveal ${toReveal.length} ${toReveal.length === 1 ? "email" : "emails"}`}
-            </Button></ManagerOnly>
+            {/* One obvious next step for who's selected; everything else under More. */}
+            {next && (
+              <ManagerOnly>
+                <Button size="sm" disabled={!!busy || next.disabled} title={next.title} onClick={next.run}>
+                  <next.icon /> {busy === next.busy ? next.doing : next.label}
+                </Button>
+              </ManagerOnly>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={!!busy}>
+                  More <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {more.map((a) => (
+                  <DropdownMenuItem key={a.key} disabled={!canManage(me?.role) || a.disabled} onSelect={a.run}>
+                    <a.icon /> {a.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       )}
@@ -575,16 +586,16 @@ function PeopleList({ wsId }: { wsId: string }) {
         open={confirmingReveal}
         onOpenChange={setConfirmingReveal}
         title={`Reveal ${toReveal.length} ${toReveal.length === 1 ? "email" : "emails"}?`}
-        description="This uses Apollo credits: about 1 per person whose email comes back, and none when Apollo has no match. Revealed people are added as leads, and are never charged for twice."
+        description="Uses about 1 Apollo credit per email found (none if Apollo has nothing). Never charged twice for the same person."
         confirmLabel={`Reveal ${toReveal.length}`}
         onConfirm={() => void reveal()}
       />
       <ConfirmDialog
         open={confirmingWrite}
         onOpenChange={setConfirmingWrite}
-        title={`Write ${withLead.length} emails?`}
-        description={`Claude writes one email for each, ${BATCH} at a time. About ${formatUsd(withLead.length * COST_PER_EMAIL)} in all, logged on Usage. Drafts wait in Review; nothing is sent. Leads without posts get an email without them, so fetch posts first. Keep this tab open until it finishes: a big selection takes a while.`}
-        confirmLabel={`Write ${withLead.length}`}
+        title={`Write ${writable.length} emails?`}
+        description={`About ${formatUsd(writable.length * COST_PER_EMAIL)}. The drafts wait in Emails to review; nothing is sent. Tip: read their posts first for more personal emails. Keep this tab open until it's done.`}
+        confirmLabel={`Write ${writable.length}`}
         onConfirm={() => {
           setConfirmingWrite(false)
           void writeEmails()

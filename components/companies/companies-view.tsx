@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Building2, DatabaseZap, Download, FileDown, Newspaper, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
+import { Building2, Check, ChevronDown, DatabaseZap, Download, FileDown, FlaskConical, MapPin, Newspaper, RotateCcw, Search, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -20,6 +20,7 @@ import { PageHeader } from "@/components/page-header"
 import { Pager } from "@/components/pager"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -37,6 +38,8 @@ import {
   type CompanySource,
 } from "@/lib/api"
 import { formatUsd } from "@/lib/format"
+import { useAuth } from "@/lib/auth"
+import { canManage } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 const MAX_RESEARCH = 10 // per request; bigger selections run in groups of 10
@@ -59,7 +62,7 @@ export function CompaniesView({ initialIcp }: { initialIcp: string }) {
     <>
       <PageHeader
         title="Companies"
-        description="Find companies for an ICP in Lead Intel and Apollo, research and score them, then find their people."
+        description="The businesses you could email. Find them, approve the good ones, then find the people there."
       />
       <div className="space-y-4 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <Pipeline key={wsId} wsId={wsId} initialIcp={initialIcp} />}</WorkspaceGate>
@@ -70,6 +73,7 @@ export function CompaniesView({ initialIcp }: { initialIcp: string }) {
 
 function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const router = useRouter()
+  const { me } = useAuth()
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [icpId, setIcpId] = useState(initialIcp)
   // No ICP picked (or an unknown one) shows every company.
@@ -117,6 +121,28 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
     setPage(1)
     router.replace(id === "all" ? "/companies" : `/companies?icp=${id}`, { scroll: false })
   }
+  const actions = [
+    { key: "find", label: `Find people at ${qualified.length}`, doing: "Finding…", busy: "find", icon: UserSearch,
+      run: () => setStakeholdersFor(qualified), disabled: !qualified.length },
+    { key: "approve", label: `Approve ${toDecide.length}`, doing: "Approving…", busy: "qualified", icon: Check,
+      run: () => void decide(toDecide.map((c) => c.id), "qualified"), disabled: !toDecide.length },
+    { key: "verify", label: `Verify ${toResearch.length}`, doing: "Verifying…", busy: "research", icon: FlaskConical,
+      run: () => void research(toResearch), disabled: !toResearch.length },
+    { key: "posts", label: `Read posts for ${picked.length}`, doing: "", busy: "", icon: Newspaper,
+      run: () => setReadingPosts(picked.map((c) => c.id)), disabled: picked.length > 2000 },
+    { key: "fill", label: `Fill in ${picked.length}`, doing: "", busy: "", icon: DatabaseZap,
+      run: () => setFillingIn(picked.map((c) => c.id)), disabled: false },
+    { key: "reverify", label: `Verify ${toReverify.length} again`, doing: "", busy: "", icon: RotateCcw,
+      run: () => setConfirmReverify(toReverify), disabled: !toReverify.length || toReverify.length > MAX_REVERIFY },
+    { key: "reject", label: `Reject ${toDecide.length}`, doing: "Rejecting…", busy: "not_fit", icon: X,
+      run: () => void decide(toDecide.map((c) => c.id), "not_fit"), disabled: !toDecide.length },
+  ]  // prettier-ignore
+  // The next step: find people at approved companies, else approve the ones waiting, else verify new ones.
+  const waiting = picked.some((c) => c.status === "review")
+  const nextKey = qualified.length ? "find" : waiting ? "approve" : toResearch.length ? "verify" : null
+  const next = actions.find((a) => a.key === nextKey)
+  const more = actions.filter((a) => a.key !== nextKey)
+
   const toggle = (id: string, on: boolean) =>
     setSelected((s) => {
       const next = new Set(s)
@@ -209,15 +235,26 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           >
             <FileDown /> Export
           </Button>
-          <ManagerOnly><Button variant="outline" onClick={() => setFinding("lead_intel")}>
-            <Download /> Import from Lead Intel
-          </Button></ManagerOnly>
-          <ManagerOnly><Button variant="outline" onClick={() => setFinding("google_maps")}>
-            <MapPin /> Search Google Maps
-          </Button></ManagerOnly>
-          <ManagerOnly><Button onClick={() => setFinding("apollo")}>
-            <Search /> Search Apollo
-          </Button></ManagerOnly>
+          <ManagerOnly>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button>
+                  <Search /> Find companies <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setFinding("google_maps")}>
+                  <MapPin /> On Google Maps
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFinding("apollo")}>
+                  <Search /> On Apollo
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setFinding("lead_intel")}>
+                  <Download /> From Lead Intel
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </ManagerOnly>
         </div>
       </div>
 
@@ -254,50 +291,32 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
           <div className="ml-auto flex flex-wrap gap-2">
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!toResearch.length || toResearch.length > MAX_RESEARCH || !!busy}
-              title={toResearch.length > MAX_RESEARCH ? `Research up to ${MAX_RESEARCH} at a time` : undefined}
-              onClick={() => void research(toResearch)}
-            >
-              <FlaskConical /> {busy === "research" ? "Researching…" : `Research ${toResearch.length}`}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!toReverify.length || toReverify.length > MAX_REVERIFY || !!busy}
-              title={toReverify.length > MAX_REVERIFY ? `Verify again up to ${MAX_REVERIFY} at a time` : undefined}
-              onClick={() => setConfirmReverify(toReverify)}
-            >
-              <RotateCcw /> Verify {toReverify.length} again
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!toDecide.length || !!busy}
-              onClick={() => void decide(toDecide.map((c) => c.id), "not_fit")}
-            >
-              {busy === "not_fit" ? "Rejecting…" : `Reject ${toDecide.length}`}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button
-              size="sm"
-              variant="outline"
-              disabled={!toDecide.length || !!busy}
-              onClick={() => void decide(toDecide.map((c) => c.id), "qualified")}
-            >
-              {busy === "qualified" ? "Approving…" : `Approve ${toDecide.length}`}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy || picked.length > 2000} onClick={() => setReadingPosts(picked.map((c) => c.id))}>
-              <Newspaper /> Read posts for {picked.length}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy} onClick={() => setFillingIn(picked.map((c) => c.id))}>
-              <DatabaseZap /> Fill in {picked.length}
-            </Button></ManagerOnly>
-            <ManagerOnly><Button size="sm" disabled={!qualified.length || !!busy} onClick={() => setStakeholdersFor(qualified)}>
-              <UserSearch /> Find stakeholders at {qualified.length}
-            </Button></ManagerOnly>
+            {/* One obvious next step for what's selected; everything else under More. */}
+            {next && (
+              <ManagerOnly>
+                <Button size="sm" disabled={!!busy} onClick={next.run}>
+                  <next.icon /> {busy === next.busy ? next.doing : next.label}
+                </Button>
+              </ManagerOnly>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" disabled={!!busy}>
+                  More <ChevronDown />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {more.map((a) => (
+                  <DropdownMenuItem key={a.label} disabled={!canManage(me?.role) || a.disabled} onSelect={a.run}>
+                    <a.icon /> {a.label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
       )}
@@ -310,7 +329,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         <EmptyState
           icon={Building2}
           title={activeIcp ? `No companies for ${activeIcp.name} yet` : "No companies yet"}
-          description="Import companies Lead Intel matched to an ICP (already verified), or search Google Maps or Apollo (researched and scored next)."
+          description="Use Find companies above: search Google Maps or Apollo, or bring them in from Lead Intel."
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <ManagerOnly><Button variant="outline" onClick={() => setFinding("lead_intel")}>

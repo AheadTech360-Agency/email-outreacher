@@ -34,7 +34,7 @@ export default function SmartListsPage() {
     <>
       <PageHeader
         title="Smart lists"
-        description="Companies and people grouped by Claude into broad lists: industries for companies, roles for people. Each company also goes under the ICP it fits; a list no ICP fits gets a draft ICP to create. Duplicates join their twin's list."
+        description="Your companies and people, grouped by industry and by role."
       />
       <div className="px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <SmartLists key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -130,13 +130,7 @@ function SmartLists({ wsId }: { wsId: string }) {
           </ManagerOnly>
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Sorting uses Claude, about one call for every 25 {what}
-        {kind === "company" && ", and reads the homepage of a company that hasn't been verified yet (plain request; sites that block it are skipped)"}
-        . What it cost shows when it&apos;s done, and on Usage.
-      </p>
-
-      {(waiting.length > 0 || undrafted.length > 0) && (
+            {(waiting.length > 0 || undrafted.length > 0) && (
         <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
           {waiting.length > 0 && (
             <div className="space-y-1.5">

@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, type CSSProperties } from "react"
-import { Building2, Calculator, Check, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
+import { Building2, Calculator, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { toast } from "sonner"
 import {
@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { fetchEmails, fetchUsage, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
+import { canManage } from "@/lib/roles"
 import { formatUsd } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -52,7 +53,9 @@ interface NavItem {
 export function AppSidebar() {
   const pathname = usePathname()
   const { settings, users, currentUserId, currentWorkspaceId } = useStore()
-  const isAdmin = users.find((u) => u.id === currentUserId)?.role === "admin"
+  // The signed-in person's own role (the users list only loads for admins).
+  const { me } = useAuth()
+  const isAdmin = me?.role === "admin" || users.find((u) => u.id === currentUserId)?.role === "admin"
   // Drafts waiting for a person, from the backend.
   const drafts = useApi(
     () => (currentWorkspaceId ? fetchEmails(currentWorkspaceId) : Promise.resolve([])),
@@ -67,54 +70,55 @@ export function AppSidebar() {
   const spent = (usage.data?.providers ?? []).reduce((sum, p) => sum + p.costUsd, 0)
   const ratio = spent / settings.monthlyBudgetUsd
 
-  // In the order the work happens: find who to contact, write to them, send, then run the workspace.
-  const groups: { label: string; items: NavItem[] }[] = [
+  // What Sales does every day, in the order it happens: find companies and people, approve emails, see what went out.
+  // Setting the campaign up (who to target, what to sell, prompts, mailboxes, costs) is under Setup, for
+  // Management and admins only, and starts folded away.
+  const groups: { label: string; items: NavItem[]; setup?: boolean }[] = [
     {
-      label: "Prospecting",
+      label: "",
       items: [
         { href: "/quickstart", label: "Quick Start", icon: Rocket },
-        { href: "/icps", label: "ICPs", icon: Target },
-        { href: "/products", label: "Products", icon: Package },
         { href: "/companies", label: "Companies", icon: Building2 },
         { href: "/people", label: "People", icon: UserSearch },
-        { href: "/smart-lists", label: "Smart lists", icon: ListTree },
-        { href: "/leads", label: "Leads", icon: Users },
-      ],
-    },
-    {
-      label: "Writing",
-      items: [
-        { href: "/review", label: "Review", icon: Inbox, count: toReview, countLabel: `${toReview} drafts need review` },
-        { href: "/prompts", label: "Prompts", icon: FileText },
-        { href: "/examples", label: "Example emails", icon: Mail },
-        { href: "/feedback", label: "Feedback", icon: MessageSquareText },
-      ],
-    },
-    {
-      label: "Sending",
-      items: [
-        { href: "/outbox", label: "Outbox", icon: Send },
+        { href: "/review", label: "Emails to review", icon: Inbox, count: toReview, countLabel: `${toReview} drafts need review` },
+        { href: "/outbox", label: "Sent", icon: Send },
         { href: "/replies", label: "Replies", icon: Reply },
-        { href: "/mailboxes", label: "Mailboxes", icon: Mails },
       ],
     },
-    {
-      label: "Workspace",
-      items: [
-        {
-          href: "/usage",
-          label: "Usage",
-          icon: Gauge,
-          badge: formatUsd(spent),
-          countLabel: `Spent in the last 30 days: ${formatUsd(spent)} of ${formatUsd(settings.monthlyBudgetUsd)} (${Math.round(ratio * 100)}%)`,
-          tone: ratio >= 1 ? "text-negative" : ratio >= 0.8 ? "text-warning" : undefined,
-        },
-        { href: "/costs", label: "Cost estimator", icon: Calculator },
-        ...(isAdmin ? [{ href: "/users", label: "Users", icon: UserCog }] : []),
-        { href: "/settings", label: "Settings", icon: Settings },
-      ],
-    },
+    ...(canManage(me?.role)
+      ? [
+          {
+            label: "Setup",
+            setup: true,
+            items: [
+              { href: "/icps", label: "Who you target (ICPs)", icon: Target },
+              { href: "/products", label: "What you sell", icon: Package },
+              { href: "/smart-lists", label: "Smart lists", icon: ListTree },
+              { href: "/leads", label: "Leads", icon: Users },
+              { href: "/prompts", label: "Prompts", icon: FileText },
+              { href: "/examples", label: "Example emails", icon: Mail },
+              { href: "/feedback", label: "Feedback", icon: MessageSquareText },
+              { href: "/mailboxes", label: "Mailboxes", icon: Mails },
+              {
+                href: "/usage",
+                label: "Usage",
+                icon: Gauge,
+                badge: formatUsd(spent),
+                countLabel: `Spent in the last 30 days: ${formatUsd(spent)} of ${formatUsd(settings.monthlyBudgetUsd)} (${Math.round(ratio * 100)}%)`,
+                tone: ratio >= 1 ? "text-negative" : ratio >= 0.8 ? "text-warning" : undefined,
+              },
+              { href: "/costs", label: "Cost estimator", icon: Calculator },
+              ...(isAdmin ? [{ href: "/users", label: "Users", icon: UserCog }] : []),
+              { href: "/settings", label: "Settings", icon: Settings },
+            ] as NavItem[],
+          },
+        ]
+      : []),
   ]
+  // Setup opens by itself while you're on one of its pages.
+  const onSetupPage = groups.some((g) => g.setup && g.items.some((i) => pathname.startsWith(i.href)))
+  const [setupOpen, setSetupOpen] = useState(false)
+  const showSetup = setupOpen || onSetupPage
   // Each row's place in the reveal animation, counted across the groups.
   const order = new Map(groups.flatMap((g) => g.items).map((item, i) => [item.href, i + 2]))
 
@@ -122,7 +126,7 @@ export function AppSidebar() {
     <Sidebar collapsible="icon" variant="inset">
       <SidebarHeader className="gap-3 px-2 pt-3">
         <Link
-          href="/icps"
+          href="/quickstart"
           className="flex min-w-0 items-center gap-2.5 rounded-md px-1.5 py-1 group-data-[collapsible=icon]:px-1"
         >
           <ColdbrewMark />
@@ -134,10 +138,16 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarContent className="gap-0">
         {groups.map((group) => (
-          <SidebarGroup key={group.label} className="py-0.5">
-            <SidebarGroupLabel className="sidebar-reveal h-6 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-              {group.label}
-            </SidebarGroupLabel>
+          <SidebarGroup key={group.label || "main"} className="py-0.5">
+            {group.setup ? (
+              <SidebarGroupLabel asChild className="sidebar-reveal h-7 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                <button type="button" aria-expanded={showSetup} onClick={() => setSetupOpen(!showSetup)} className="flex w-full items-center justify-between">
+                  {group.label}
+                  <ChevronDown className={cn("size-3.5 transition-transform", showSetup && "rotate-180")} aria-hidden />
+                </button>
+              </SidebarGroupLabel>
+            ) : null}
+            {(!group.setup || showSetup) && (
             <SidebarGroupContent>
               <SidebarMenu className="gap-0.5">
                 {group.items.map(({ href, label, icon: Icon, count, badge, countLabel, tone }) => (
@@ -162,6 +172,7 @@ export function AppSidebar() {
                 ))}
               </SidebarMenu>
             </SidebarGroupContent>
+            )}
           </SidebarGroup>
         ))}
       </SidebarContent>
