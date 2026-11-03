@@ -86,6 +86,7 @@ function Products({ wsId }: { wsId: string }) {
   const products = useApi(() => fetchProducts(wsId), [wsId])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [editing, setEditing] = useState<Product | "new" | null>(null)
+  const [deleting, setDeleting] = useState<Product | null>(null)
 
   if (products.error && !products.data) return <BackendError message={products.error} onRetry={products.reload} />
   if (!products.data) return <TableSkeleton rows={4} />
@@ -120,6 +121,9 @@ function Products({ wsId }: { wsId: string }) {
                   <TableHead>Product</TableHead>
                   <TableHead>Sold to</TableHead>
                   <TableHead>Updated</TableHead>
+                  <TableHead className="w-12">
+                    <span className="sr-only">Delete</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -143,6 +147,20 @@ function Products({ wsId }: { wsId: string }) {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{shortDate(p.updatedAt)}</TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ManagerOnly>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label={`Delete ${p.name}`}
+                          title="Delete"
+                          onClick={() => setDeleting(p)}
+                        >
+                          <Trash2 />
+                        </Button>
+                      </ManagerOnly>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -150,6 +168,31 @@ function Products({ wsId }: { wsId: string }) {
           </div>
         </>
       )}
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={`Delete ${deleting?.name ?? "this product"}?`}
+        description={
+          deleting?.icpIds.length
+            ? `It's sold to ${deleting.icpIds.map((id) => icpName.get(id) ?? "an ICP").join(", ")}: they'll have no product until you pick another, and their emails can't be written until then (unless the ICP has its own offer).`
+            : "It isn't used by any ICP."
+        }
+        confirmLabel="Delete product"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          try {
+            await deleteProduct(wsId, deleting.id)
+            toast.success(`Deleted ${deleting.name}`)
+            products.reload()
+          } catch (e) {
+            toast.error("Couldn't delete it", { description: e instanceof Error ? e.message : undefined })
+          } finally {
+            setDeleting(null)
+          }
+        }}
+      />
 
       {editing && (
         <ProductSheet

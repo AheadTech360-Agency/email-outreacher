@@ -1490,6 +1490,12 @@ export const moveToSmartList = (
 export const sortSmartLists = (workspaceId: string, kind: SmartListKind, limit: number) =>
   runJob<SortListsResult>("/smart-lists/sort", { workspaceId, body: { kind, limit } })
 
+export const createSmartList = (workspaceId: string, kind: SmartListKind, name: string) =>
+  api<SmartList>("/smart-lists", { workspaceId, method: "POST", body: { kind, name } })
+
+/** Its companies or people are kept, back in "not in a list". */
+export const deleteSmartList = (workspaceId: string, id: string) => api<void>(`/smart-lists/${id}`, { workspaceId, method: "DELETE" })
+
 export const renameSmartList = (workspaceId: string, id: string, name: string) =>
   api<SmartList>(`/smart-lists/${id}`, { workspaceId, method: "PATCH", body: { name } })
 

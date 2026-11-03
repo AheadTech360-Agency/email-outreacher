@@ -4,6 +4,7 @@ import Link from "next/link"
 import { ArrowRight, Plus, Target } from "lucide-react"
 import { BackendError } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
+import { IcpLifecycleActions } from "@/components/icp-lifecycle-actions"
 import { PageHeader } from "@/components/page-header"
 import { ConfidenceBadge, Pill, PipelineStrip } from "@/components/status"
 import { Button } from "@/components/ui/button"
@@ -120,11 +121,14 @@ export default function IcpsPage() {
                     <div className="text-[28px] leading-8 font-normal tabular-nums">{counts.review}</div>
                     <div className="text-xs text-muted-foreground">to review</div>
                   </div>
-                  <Button asChild variant={counts.review > 0 ? "default" : "outline"} size="sm">
-                    <Link href={counts.review > 0 ? `/icps/${icp.id}/review` : `/icps/${icp.id}/leads`}>
-                      {counts.review > 0 ? "Review" : "Open"} <ArrowRight />
-                    </Link>
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button asChild variant={counts.review > 0 ? "default" : "outline"} size="sm">
+                      <Link href={counts.review > 0 ? `/icps/${icp.id}/review` : `/icps/${icp.id}/leads`}>
+                        {counts.review > 0 ? "Review" : "Open"} <ArrowRight />
+                      </Link>
+                    </Button>
+                    <IcpLifecycleActions icp={icp} />
+                  </div>
                 </div>
               </li>
             ))}

@@ -46,7 +46,7 @@ export function IcpLifecycleActions({ icp }: { icp: ICP }) {
     const id = toast.loading(`Deleting ${icp.name}…`)
     try {
       await deleteIcp(icp.id)
-      toast.success(`${icp.name} deleted`, { id, description: "Its campaign was archived in CheapSequencer." })
+      toast.success(`${icp.name} deleted`, { id, description: "Its companies and people are kept with no ICP." })
       router.push("/icps")
     } catch (e) {
       toast.error("Couldn't delete it", { id, description: e instanceof Error ? e.message : undefined })
@@ -94,7 +94,7 @@ export function IcpLifecycleActions({ icp }: { icp: ICP }) {
         open={pending === "delete"}
         onOpenChange={(o) => !o && setPending(null)}
         title={`Delete ${icp.name}?`}
-        description="It's removed from Lead Intel for good and its campaign is archived. Only an ICP nothing uses yet can be deleted: no Lead Intel businesses, leads, companies or rated emails. Otherwise archive it."
+        description="It's removed from Lead Intel for good and its campaign is archived. Its companies and people stay in Coldbrew with no ICP, so you can give them another on Home. Not possible while Lead Intel businesses are in it or emails for it are queued or sent: archive it then."
         confirmLabel={`Delete ${icp.name}`}
         destructive
         onConfirm={() => {

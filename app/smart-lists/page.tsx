@@ -2,9 +2,10 @@
 
 import Link from "next/link"
 import { useEffect, useState } from "react"
-import { ChevronLeft, ChevronRight, Download, ListTree, Search, Sparkles } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, ListTree, Plus, Search, Sparkles, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { WorkspaceGate } from "@/components/companies/backend-state"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { IcpDraftPanel } from "@/components/smart-lists/icp-draft-panel"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
@@ -13,11 +14,13 @@ import { Pager } from "@/components/pager"
 import { Pill } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  downloadCsv, draftSmartListIcp, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
   useApi, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
@@ -46,6 +49,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 function SmartLists({ wsId }: { wsId: string }) {
   const [kind, setKind] = useState<SmartListKind>("company")
   const [openId, setOpenId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const [sorting, setSorting] = useState(false)
   const lists = useApi(() => fetchSmartLists(wsId, kind), [wsId, kind])
   const what = kind === "company" ? "companies" : "people"
@@ -122,6 +126,11 @@ function SmartLists({ wsId }: { wsId: string }) {
             </Button>
           )}
           <ManagerOnly>
+            <Button variant="outline" onClick={() => setCreating(true)}>
+              <Plus /> New list
+            </Button>
+          </ManagerOnly>
+          <ManagerOnly>
             <Button disabled={sorting || !unsorted} onClick={() => void sort()}>
               <Sparkles /> {sorting ? "Sorting…" : `Sort ${Math.min(unsorted, SORT_LIMIT)} ${what}`}
             </Button>
@@ -195,29 +204,112 @@ function SmartLists({ wsId }: { wsId: string }) {
             ))}
           </ul>
           {openId ? (
-            <ListDetail key={openId} wsId={wsId} id={openId} lists={lists.data?.lists ?? []} onChanged={lists.reload} />
+            <ListDetail
+              key={openId}
+              wsId={wsId}
+              id={openId}
+              lists={lists.data?.lists ?? []}
+              onChanged={lists.reload}
+              onDeleted={() => {
+                setOpenId(null)
+                lists.reload()
+              }}
+            />
           ) : (
             <p className="text-sm text-muted-foreground">Pick a list to see who&apos;s in it.</p>
           )}
         </div>
       )}
+      <NewListDialog
+        wsId={wsId}
+        kind={kind}
+        open={creating}
+        onClose={() => setCreating(false)}
+        onCreated={(l) => {
+          setCreating(false)
+          lists.reload()
+          setOpenId(l.id)
+        }}
+      />
     </div>
   )
 }
 
 const NEW_LIST = "__new__"
 
+function NewListDialog({
+  wsId,
+  kind,
+  open,
+  onClose,
+  onCreated,
+}: {
+  wsId: string
+  kind: SmartListKind
+  open: boolean
+  onClose: () => void
+  onCreated: (list: SmartList) => void
+}) {
+  const [name, setName] = useState("")
+  const [busy, setBusy] = useState(false)
+  const create = async () => {
+    if (!name.trim()) return
+    setBusy(true)
+    try {
+      const list = await createSmartList(wsId, kind, name.trim())
+      toast.success(`Created ${list.name}`, { description: `Move ${kind === "company" ? "companies" : "people"} into it from another list.` })
+      setName("")
+      onCreated(list)
+    } catch (e) {
+      toast.error("Couldn't create it", { description: errorText(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && !busy && onClose()}>
+      <DialogContent className="sm:max-w-md!">
+        <DialogHeader>
+          <DialogTitle>New {kind === "company" ? "company" : "people"} list</DialogTitle>
+          <DialogDescription>An empty list. Move {kind === "company" ? "companies" : "people"} into it, and sorting puts new ones in it when they fit.</DialogDescription>
+        </DialogHeader>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault()
+            void create()
+          }}
+          className="space-y-1.5"
+        >
+          <Label htmlFor="new-list-name">Name</Label>
+          <Input id="new-list-name" autoFocus value={name} maxLength={60} placeholder={kind === "company" ? "Screen printers" : "Marketing leads"} onChange={(e) => setName(e.target.value)} />
+        </form>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button disabled={busy || !name.trim()} onClick={() => void create()}>
+            {busy ? "Creating…" : "Create list"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 function ListDetail({
   wsId,
   id,
   lists,
   onChanged,
+  onDeleted,
 }: {
   wsId: string
   id: string
   lists: SmartList[]
   onChanged: () => void
+  onDeleted: () => void
 }) {
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [search, setSearch] = useState("")
@@ -333,8 +425,30 @@ function ListDetail({
           >
             <Download /> Download CSV
           </Button>
+          <ManagerOnly>
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+              <Trash2 /> Delete list
+            </Button>
+          </ManagerOnly>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Delete ${d.name}?`}
+        description={`Its ${d.count.toLocaleString()} ${what(d.count)} are kept, back in "not in a list", and sorting can put them in another list.${d.leadIntelIcpId ? " The ICP created from it stays." : ""}`}
+        confirmLabel="Delete list"
+        destructive
+        onConfirm={async () => {
+          try {
+            await deleteSmartList(wsId, id)
+            toast.success(`Deleted ${d.name}`)
+            onDeleted()
+          } catch (e) {
+            toast.error("Couldn't delete it", { description: errorText(e) })
+          }
+        }}
+      />
 
       {d.kind === "company" && <IcpDraftPanel wsId={wsId} list={d} onChanged={() => (list.reload(), onChanged())} />}
 
