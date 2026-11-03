@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { Building2, Download, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
+import { Building2, Download, FileDown, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
@@ -11,7 +11,6 @@ import { GoogleMapsSearchDialog } from "@/components/companies/google-maps-searc
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
 import { LeadIntelImportDialog } from "@/components/companies/lead-intel-import-dialog"
 import { SourcePill, StatusPill } from "@/components/companies/pipeline-cells"
-import { PipelineSheet } from "@/components/companies/pipeline-sheet"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
@@ -30,7 +29,7 @@ import {
   fetchStakeholders,
   researchCompanies,
   decideCompanies,
-  setCompanyStatus,
+  downloadCsv,
   useApi,
   type CompanySource,
 } from "@/lib/api"
@@ -82,7 +81,6 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [finding, setFinding] = useState<CompanySource | null>(null)
   const [stakeholdersFor, setStakeholdersFor] = useState<PipelineCompany[] | null>(null)
-  const [open, setOpen] = useState<PipelineCompany | null>(null)
   const [busy, setBusy] = useState("")
 
   const list = companies.data ?? []
@@ -166,20 +164,6 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
     }
   }
 
-  const changeStatus = async (company: PipelineCompany, status: "qualified" | "not_fit") => {
-    setBusy("status")
-    try {
-      const updated = await setCompanyStatus(wsId, company.id, status)
-      setOpen((o) => (o?.id === updated.id ? updated : o))
-      toast.success(status === "qualified" ? `Approved ${company.name}` : `Rejected ${company.name}`)
-      companies.reload()
-    } catch (e) {
-      toast.error("Couldn't change it", { description: e instanceof Error ? e.message : undefined })
-    } finally {
-      setBusy("")
-    }
-  }
-
   if (icps.error && !icps.data) return <BackendError message={icps.error} onRetry={icps.reload} />
   if (!icps.data) return <TableSkeleton rows={6} />
   if (icps.data.length === 0)
@@ -209,6 +193,17 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           <Input aria-label="Search companies" placeholder="Search name or domain" className="pl-8" value={query} onChange={(e) => (setQuery(e.target.value), setPage(1))} />
         </div>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
+          <Button
+            variant="outline"
+            title="Every company shown for this ICP (or all), with research, score and smart list"
+            onClick={() =>
+              void downloadCsv(wsId, activeIcp ? `/pipeline/companies.csv?icpId=${activeIcp.id}` : "/pipeline/companies.csv", "companies.csv").catch(
+                (e) => toast.error(e.message),
+              )
+            }
+          >
+            <FileDown /> Export
+          </Button>
           <ManagerOnly><Button variant="outline" onClick={() => setFinding("lead_intel")}>
             <Download /> Import from Lead Intel
           </Button></ManagerOnly>
@@ -352,7 +347,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             </TableHeader>
             <TableBody>
               {shown.map((c) => (
-                <TableRow key={c.id} className="cursor-pointer" onClick={() => setOpen(c)}>
+                <TableRow key={c.id} className="cursor-pointer" onClick={() => router.push(`/companies/${c.id}`)}>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <Checkbox aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onCheckedChange={(v) => toggle(c.id, v === true)} />
                   </TableCell>
@@ -449,21 +444,6 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             void research(targets)
           }}
         />
-      {open && (
-        <PipelineSheet
-          workspaceId={wsId}
-          company={open}
-          busy={!!busy}
-          onClose={() => setOpen(null)}
-          onStatus={(status) => void changeStatus(open, status)}
-          onFindStakeholders={() => setStakeholdersFor([open])}
-          onReverify={open.source !== "lead_intel" && !needsResearch(open) ? () => setConfirmReverify([open]) : undefined}
-          onExcluded={() => {
-            setOpen(null)
-            companies.reload()
-          }}
-        />
-      )}
     </>
   )
 }

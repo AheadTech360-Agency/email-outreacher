@@ -332,10 +332,10 @@ function PeopleList({ wsId }: { wsId: string }) {
           <Button
             size="sm"
             variant="outline"
-            title="Everyone here, in Apollo's export format"
-            onClick={() => void downloadCsv(wsId, "/smart-lists/people.csv", "people.csv").catch((e) => toast.error(e.message))}
+            title="Everyone here: email, ICP, smart list and whether they're a lead. Apollo's format is on Smart lists."
+            onClick={() => void downloadCsv(wsId, "/stakeholders/export.csv", "people.csv").catch((e) => toast.error(e.message))}
           >
-            <Download /> Download CSV
+            <Download /> Export
           </Button>
           <Button size="sm" variant="outline" onClick={() => setAdding("one")}>
             <UserPlus /> Add a person
@@ -432,7 +432,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                 const cell = emailCell(s)
                 const leadPosts = s.leadId ? (postsByLead.get(s.leadId) ?? []) : []
                 return (
-                  <TableRow key={s.id} className="cursor-pointer" onClick={() => toggle(s.id, !selected.has(s.id))}>
+                  <TableRow key={s.id} className="cursor-pointer" onClick={() => router.push(`/people/${s.id}`)}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         aria-label={`Select ${s.firstName}`}
@@ -446,7 +446,19 @@ function PeopleList({ wsId }: { wsId: string }) {
                       </p>
                       <p className="truncate text-[13px] text-muted-foreground">{s.title || "No title"}</p>
                     </TableCell>
-                    <TableCell className="max-w-56 truncate">{company(s)}</TableCell>
+                    <TableCell className="max-w-56 truncate">
+                      {s.pipelineCompanyId ? (
+                        <Link
+                          href={`/companies/${s.pipelineCompanyId}`}
+                          className="hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {company(s)}
+                        </Link>
+                      ) : (
+                        company(s)
+                      )}
+                    </TableCell>
                     <TableCell>
                       {s.source === "apify_linkedin" ? (
                         <Pill tone="info">LinkedIn</Pill>

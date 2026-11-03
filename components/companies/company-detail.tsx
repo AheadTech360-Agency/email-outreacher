@@ -6,7 +6,6 @@ import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/co
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
 import { ManagerOnly } from "@/components/manager-only"
 import { Button } from "@/components/ui/button"
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { type PipelineCompany, fetchCompanyContent, fetchCompanyDetail, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
@@ -87,12 +86,11 @@ function StoredContent({ workspaceId, companyId }: { workspaceId: string; compan
   )
 }
 
-/** Everything known about a pipeline company: why it is where it is, and what was read. */
-export function PipelineSheet({
+/** Everything known about a pipeline company: why it is where it is, and what was read. Its page's body. */
+export function CompanyDetail({
   workspaceId,
   company,
   busy,
-  onClose,
   onStatus,
   onFindStakeholders,
   onExcluded,
@@ -101,7 +99,6 @@ export function PipelineSheet({
   workspaceId: string
   company: PipelineCompany
   busy: boolean
-  onClose: () => void
   onStatus: (status: "qualified" | "not_fit") => void
   onFindStakeholders: () => void
   /** Verify again with the current prompt; absent when it can't be (Lead Intel's, or never researched). */
@@ -118,14 +115,12 @@ export function PipelineSheet({
   const score = company.scoreDetail
 
   return (
-    <Sheet open onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-lg!">
-        <SheetHeader className="px-5 pt-5 pb-4">
-          <SheetTitle className="text-lg">{company.name}</SheetTitle>
-          <SheetDescription>
+    <div className="overflow-hidden rounded-lg border">
+        <div className="space-y-1 px-5 pt-5 pb-4">
+          <p className="text-sm text-muted-foreground">
             {company.domain ?? "No website"} · from {SOURCE_NAME[company.source]}
             {company.researchedAt ? ` · researched ${shortDate(company.researchedAt)}` : ""}
-          </SheetDescription>
+          </p>
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <StatusPill status={company.status} />
             {company.score !== null && <span className="text-sm font-medium tabular-nums">Score {company.score}</span>}
@@ -159,7 +154,7 @@ export function PipelineSheet({
               </Button>
             )}
           </div>
-        </SheetHeader>
+        </div>
         {excluding && (
           <ExcludeCompanyDialog workspaceId={workspaceId} company={company} onClose={() => setExcluding(false)} onExcluded={onExcluded} />
         )}
@@ -280,7 +275,6 @@ export function PipelineSheet({
             </div>
           )}
         </Section>
-      </SheetContent>
-    </Sheet>
+    </div>
   )
 }

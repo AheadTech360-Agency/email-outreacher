@@ -595,6 +595,9 @@ export const revealStakeholders = (workspaceId: string, stakeholderIds: string[]
 
 export const fetchAllStakeholders = (workspaceId: string) => api<Stakeholder[]>("/stakeholders", { workspaceId })
 
+/** One person, for their page. */
+export const fetchStakeholder = (workspaceId: string, id: string) => api<Stakeholder>(`/stakeholders/${id}`, { workspaceId })
+
 /** A new ICP: exactly Lead Intel's fields. Added to Lead Intel's icps table, shared by both projects. */
 export type IcpCreate = Pick<
   ICP,
@@ -928,6 +931,9 @@ export interface CompanyContent {
   pages: { url: string; role: string; via: string; status: number | null; text: string; fetchedAt: string }[]
   posts: { id: string; source: string; url: string; postedAt: string | null; text: string; mediaType: string }[]
 }
+
+/** One pipeline company, for its page. */
+export const fetchPipelineCompany = (workspaceId: string, id: string) => api<PipelineCompany>(`/pipeline/companies/${id}`, { workspaceId })
 
 export const fetchCompanyContent = (workspaceId: string, companyId: string) =>
   api<CompanyContent>(`/pipeline/companies/${companyId}/content`, { workspaceId })
