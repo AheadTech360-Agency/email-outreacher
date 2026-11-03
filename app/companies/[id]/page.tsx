@@ -1,6 +1,6 @@
 "use client"
 
-import { useParams, useRouter } from "next/navigation"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
 import { Ban, Check, ExternalLink, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
@@ -40,6 +40,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 
 function Company({ wsId, id }: { wsId: string; id: string }) {
   const router = useRouter()
+  const tab = useSearchParams().get("tab") ?? "overview"
   const { me } = useAuth()
   const company = useApi(() => fetchPipelineCompany(wsId, id), [wsId, id])
   const people = useApi(() => fetchAllStakeholders(wsId), [wsId])
@@ -183,7 +184,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
         }
       />
 
-      <Tabs defaultValue="overview" className="px-4 pb-10 md:px-8">
+      <Tabs defaultValue={tab} className="px-4 pb-10 md:px-8">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="people">People ({here.length})</TabsTrigger>

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Building2, Download, FileDown, FlaskConical, MapPin, RotateCcw, Search, UserSearch } from "lucide-react"
@@ -366,7 +367,19 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                     {c.statusReason && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{c.statusReason}</p>}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{c.score ?? "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{peopleAt.get(c.id) ?? "—"}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {peopleAt.get(c.id) ? (
+                      <Link
+                        href={`/companies/${c.id}?tab=people`}
+                        className="text-data hover:underline"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {peopleAt.get(c.id)}
+                      </Link>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     {c.status === "qualified" ? (
                       <Button size="sm" variant="outline" onClick={() => setStakeholdersFor([c])}>
