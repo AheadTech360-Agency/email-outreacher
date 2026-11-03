@@ -2,9 +2,10 @@
 
 import Link from "next/link"
 import { useState } from "react"
-import { ArrowRight, CheckCircle2, Rocket } from "lucide-react"
+import { ArrowRight, CheckCircle2, Rocket, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { IcpDraftPanel } from "@/components/smart-lists/icp-draft-panel"
@@ -12,7 +13,17 @@ import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { type HomeData, type HomeStage, type SmartList, fetchHome, fetchSmartLists, setSmartListIcp, useApi } from "@/lib/api"
+import {
+  type HomeData,
+  type HomeStage,
+  type SmartList,
+  createIcpFromList,
+  draftSmartListIcp,
+  fetchHome,
+  fetchSmartLists,
+  setSmartListIcp,
+  useApi,
+} from "@/lib/api"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -47,6 +58,8 @@ function Home({ wsId }: { wsId: string }) {
   }
   const d = home.data
   const drafts = (lists.data?.lists ?? []).filter((l) => l.icpDraft && !l.leadIntelIcpId)
+  const byId = new Map((lists.data?.lists ?? []).map((l) => [l.id, l]))
+  const [open, setOpen] = useState<SmartList | null>(null)
 
   return (
     <>
@@ -77,13 +90,22 @@ function Home({ wsId }: { wsId: string }) {
           <>
             <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <NextSteps data={d} drafts={drafts.length} />
-              <Drafts wsId={wsId} drafts={drafts} loading={!lists.data} onChanged={reload} />
+              <Drafts drafts={drafts} loading={!lists.data} onOpen={setOpen} />
             </div>
-            <NoIcp wsId={wsId} data={d} onChanged={reload} />
+            <NoIcp wsId={wsId} data={d} lists={byId} onOpen={setOpen} onChanged={reload} />
             <ByIcp data={d} />
           </>
         )}
       </div>
+      <DraftDialog
+        wsId={wsId}
+        list={open}
+        onClose={() => setOpen(null)}
+        onChanged={() => {
+          setOpen(null)
+          reload()
+        }}
+      />
     </>
   )
 }
@@ -206,8 +228,7 @@ function NextSteps({ data, drafts }: { data: HomeData; drafts: number }) {
   )
 }
 
-function Drafts({ wsId, drafts, loading, onChanged }: { wsId: string; drafts: SmartList[]; loading: boolean; onChanged: () => void }) {
-  const [open, setOpen] = useState<SmartList | null>(null)
+function Drafts({ drafts, loading, onOpen }: { drafts: SmartList[]; loading: boolean; onOpen: (list: SmartList) => void }) {
   return (
     <section id="drafts" aria-labelledby="drafts-title" className="min-w-0 scroll-mt-6 space-y-3">
       <div className="flex items-baseline justify-between gap-3">
@@ -227,7 +248,7 @@ function Drafts({ wsId, drafts, loading, onChanged }: { wsId: string; drafts: Sm
           <ul className="divide-y divide-rule">
             {drafts.slice(0, 4).map((l) => (
               <li key={l.id}>
-                <button type="button" onClick={() => setOpen(l)} className="group block w-full px-4 py-3 text-left hover:bg-muted/50">
+                <button type="button" onClick={() => onOpen(l)} className="group block w-full px-4 py-3 text-left hover:bg-muted/50">
                   <span className="flex items-baseline justify-between gap-3">
                     <span className="truncate text-sm font-medium">{l.icpDraft?.name || l.name}</span>
                     <span className="flex-none text-xs text-muted-foreground tabular-nums">{plural(l.count, "company", "companies")}</span>
@@ -247,57 +268,140 @@ function Drafts({ wsId, drafts, loading, onChanged }: { wsId: string; drafts: Sm
           </Link>
         )}
       </div>
-      <Dialog open={!!open} onOpenChange={(o) => !o && setOpen(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl!">
-          <DialogHeader>
-            <DialogTitle>{open?.icpDraft?.name || open?.name}</DialogTitle>
-            <DialogDescription>
-              Drafted from the {open ? plural(open.count, "company", "companies") : ""} in the smart list {open?.name}. Edit anything, then create it:
-              the list&apos;s companies without an ICP go under it.
-            </DialogDescription>
-          </DialogHeader>
-          {open && (
-            <IcpDraftPanel
-              wsId={wsId}
-              list={open}
-              onChanged={() => {
-                setOpen(null)
-                onChanged()
-              }}
-            />
-          )}
-        </DialogContent>
-      </Dialog>
     </section>
   )
 }
 
-function NoIcp({ wsId, data, onChanged }: { wsId: string; data: HomeData; onChanged: () => void }) {
+function DraftDialog({ wsId, list, onClose, onChanged }: { wsId: string; list: SmartList | null; onClose: () => void; onChanged: () => void }) {
+  return (
+    <Dialog open={!!list} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl!">
+        <DialogHeader>
+          <DialogTitle>{list?.icpDraft?.name || list?.name}</DialogTitle>
+          <DialogDescription>
+            Drafted from the {list ? plural(list.count, "company", "companies") : ""} in the smart list {list?.name}. Edit anything, then create it:
+            the list&apos;s companies without an ICP go under it.
+          </DialogDescription>
+        </DialogHeader>
+        {list && (
+          <IcpDraftPanel
+            wsId={wsId}
+            list={list}
+            onChanged={onChanged}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function NoIcp({
+  wsId,
+  data,
+  lists,
+  onOpen,
+  onChanged,
+}: {
+  wsId: string
+  data: HomeData
+  lists: Map<string, SmartList>
+  onOpen: (list: SmartList) => void
+  onChanged: () => void
+}) {
   const [all, setAll] = useState(false)
+  const [confirming, setConfirming] = useState<"" | "create" | "suggest">("")
+  const [busy, setBusy] = useState("")
+  const rows = data.noIcp.map((r) => ({ row: r, list: r.listId ? lists.get(r.listId) : undefined }))
+  const suggested = rows.flatMap(({ list }) => (list?.icpDraft && !list.leadIntelIcpId ? [list] : []))
+  const unsuggested = rows.flatMap(({ row, list }) => (list && !list.icpDraft && !list.leadIntelIcpId && row.name !== "Uncategorized" ? [list] : []))
+
+  // One after another, so a failure names its list and the rest still go through.
+  const createAll = async () => {
+    setConfirming("")
+    let failed = 0
+    for (const [i, l] of suggested.entries()) {
+      setBusy(`Creating ${i + 1} of ${suggested.length}…`)
+      try {
+        await createIcpFromList(wsId, l.id, l.icpDraft!)
+      } catch (e) {
+        failed += 1
+        toast.error(`Couldn't create ${l.icpDraft?.name || l.name}`, { description: errorText(e) })
+      }
+    }
+    setBusy("")
+    if (suggested.length - failed) toast.success(`Created ${plural(suggested.length - failed, "ICP", "ICPs")}`, { description: "Add a product to each on the ICPs page before writing to them." })
+    onChanged()
+  }
+  const suggestAll = async () => {
+    setConfirming("")
+    let failed = 0
+    for (const [i, l] of unsuggested.entries()) {
+      setBusy(`Suggesting ${i + 1} of ${unsuggested.length}…`)
+      try {
+        await draftSmartListIcp(wsId, l.id)
+      } catch {
+        failed += 1
+      }
+    }
+    setBusy("")
+    if (failed) toast.error(`${failed} couldn't be suggested`)
+    else toast.success(`Suggested ${plural(unsuggested.length, "ICP", "ICPs")}`, { description: "Review each one, or create them all." })
+    onChanged()
+  }
+
   if (!data.noIcp.length) return null
   const total = data.noIcp.reduce((sum, r) => sum + r.count, 0)
   const largest = Math.max(...data.noIcp.map((r) => r.count))
   const shown = all ? data.noIcp : data.noIcp.slice(0, 6)
   return (
     <section id="no-icp" aria-labelledby="no-icp-title" className="scroll-mt-6 space-y-3">
-      <div>
-        <h2 id="no-icp-title" className="text-base font-semibold">
-          {plural(total, "company", "companies")} without an ICP
-        </h2>
-        <p className="text-sm text-muted-foreground">Give a smart list an ICP and its companies go under it, with their people. Companies that have one keep it.</p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0 flex-1 basis-96">
+          <h2 id="no-icp-title" className="text-base font-semibold">
+            {plural(total, "company", "companies")} without an ICP
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Create the ICP Claude suggests for a smart list, or put the list under one you have. Its companies go under it with their people;
+            companies that have an ICP keep it.
+          </p>
+        </div>
+        <ManagerOnly>
+          <div className="flex flex-wrap gap-2">
+            {busy ? (
+              <p className="text-sm text-muted-foreground">{busy}</p>
+            ) : (
+              <>
+                {unsuggested.length > 0 && (
+                  <Button variant="outline" onClick={() => setConfirming("suggest")}>
+                    <Sparkles /> Suggest ICPs for {unsuggested.length}
+                  </Button>
+                )}
+                {suggested.length > 0 && <Button onClick={() => setConfirming("create")}>Create all {suggested.length} suggested ICPs</Button>}
+              </>
+            )}
+          </div>
+        </ManagerOnly>
       </div>
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full min-w-[640px] text-sm">
+        <table className="w-full min-w-[820px] text-sm">
           <thead className="text-left text-xs text-muted-foreground">
             <tr className="border-b">
               <th className="px-4 py-2 font-medium">Smart list</th>
-              <th className="w-[30%] px-3 py-2 font-medium">Companies</th>
-              <th className="px-4 py-2 text-right font-medium">Put them under</th>
+              <th className="w-[24%] px-3 py-2 font-medium">Companies</th>
+              <th className="px-4 py-2 text-right font-medium">Give them an ICP</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-rule">
             {shown.map((row) => (
-              <NoIcpRow key={row.listId ?? "none"} wsId={wsId} row={row} largest={largest} onChanged={onChanged} />
+              <NoIcpRow
+                key={row.listId ?? "none"}
+                wsId={wsId}
+                row={row}
+                list={row.listId ? lists.get(row.listId) : undefined}
+                largest={largest}
+                onOpen={onOpen}
+                onChanged={onChanged}
+              />
             ))}
           </tbody>
         </table>
@@ -307,14 +411,58 @@ function NoIcp({ wsId, data, onChanged }: { wsId: string; data: HomeData; onChan
           </button>
         )}
       </div>
+      <ConfirmDialog
+        open={confirming === "create"}
+        onOpenChange={(o) => !o && setConfirming("")}
+        title={`Create ${plural(suggested.length, "ICP", "ICPs")}?`}
+        description={`Each is created as Claude suggested it, in Lead Intel, and its smart list's companies without an ICP go under it: ${suggested.map((l) => l.icpDraft?.name || l.name).join(", ")}. You can edit them on the ICPs page afterwards.`}
+        confirmLabel={`Create ${suggested.length}`}
+        onConfirm={() => void createAll()}
+      />
+      <ConfirmDialog
+        open={confirming === "suggest"}
+        onOpenChange={(o) => !o && setConfirming("")}
+        title={`Suggest ICPs for ${plural(unsuggested.length, "list", "lists")}?`}
+        description={`Claude reads up to 30 companies in each of ${unsuggested.map((l) => l.name).join(", ")} and suggests an ICP. About 1 cent each, logged on Usage. Nothing is created until you create it.`}
+        confirmLabel="Suggest"
+        onConfirm={() => void suggestAll()}
+      />
     </section>
   )
 }
 
-function NoIcpRow({ wsId, row, largest, onChanged }: { wsId: string; row: HomeData["noIcp"][number]; largest: number; onChanged: () => void }) {
+function NoIcpRow({
+  wsId,
+  row,
+  list,
+  largest,
+  onOpen,
+  onChanged,
+}: {
+  wsId: string
+  row: HomeData["noIcp"][number]
+  list: SmartList | undefined
+  largest: number
+  onOpen: (list: SmartList) => void
+  onChanged: () => void
+}) {
   const { icps } = useStore()
   const [icpId, setIcpId] = useState("")
   const [saving, setSaving] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
+  // Claude suggests one from the list's companies, then it opens to review and create.
+  const suggest = async () => {
+    if (!list) return
+    setSuggesting(true)
+    try {
+      onOpen(await draftSmartListIcp(wsId, list.id))
+      onChanged()
+    } catch (e) {
+      toast.error("Couldn't suggest one", { description: errorText(e) })
+    } finally {
+      setSuggesting(false)
+    }
+  }
   const assign = async () => {
     if (!row.listId || !icpId) return
     setSaving(true)
@@ -331,7 +479,9 @@ function NoIcpRow({ wsId, row, largest, onChanged }: { wsId: string; row: HomeDa
     <tr>
       <td className="px-4 py-2.5">
         <span className="font-medium">{row.name ?? "Not in a smart list"}</span>
-        {row.hasDraft && <span className="block text-xs text-muted-foreground">Has a draft ICP</span>}
+        {list?.icpDraft && (
+          <span className="block truncate text-xs text-muted-foreground">Suggested: {list.icpDraft.name || list.name}</span>
+        )}
       </td>
       <td className="px-3 py-2.5">
         <span className="flex items-center gap-2">
@@ -345,6 +495,16 @@ function NoIcpRow({ wsId, row, largest, onChanged }: { wsId: string; row: HomeDa
         {row.listId ? (
           <ManagerOnly>
             <div className="flex items-center justify-end gap-2">
+              {list?.icpDraft ? (
+                <Button size="sm" onClick={() => onOpen(list)}>
+                  See suggested ICP
+                </Button>
+              ) : list && row.name !== "Uncategorized" ? (
+                <Button size="sm" variant="outline" disabled={suggesting} onClick={() => void suggest()} title="Claude suggests one from its companies, about 1 cent">
+                  <Sparkles /> {suggesting ? "Suggesting…" : "Suggest an ICP"}
+                </Button>
+              ) : null}
+              <span className="text-xs text-muted-foreground">or</span>
               <Select value={icpId} onValueChange={setIcpId}>
                 <SelectTrigger size="sm" className="w-52!" aria-label={`ICP for ${row.name}`}>
                   <SelectValue placeholder="Pick an ICP" />
@@ -357,7 +517,7 @@ function NoIcpRow({ wsId, row, largest, onChanged }: { wsId: string; row: HomeDa
                   ))}
                 </SelectContent>
               </Select>
-              <Button size="sm" disabled={!icpId || saving} onClick={() => void assign()}>
+              <Button size="sm" variant="outline" disabled={!icpId || saving} onClick={() => void assign()}>
                 {saving ? "Assigning…" : "Assign"}
               </Button>
             </div>
