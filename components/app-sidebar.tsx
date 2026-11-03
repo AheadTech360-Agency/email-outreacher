@@ -81,6 +81,8 @@ export function AppSidebar() {
         { href: "/quickstart", label: "Quick Start", icon: Rocket },
         { href: "/companies", label: "Companies", icon: Building2 },
         { href: "/people", label: "People", icon: UserSearch },
+        { href: "/smart-lists", label: "Smart lists", icon: ListTree },
+        { href: "/leads", label: "Leads", icon: Users },
         { href: "/review", label: "Emails to review", icon: Inbox, count: toReview, countLabel: `${toReview} drafts need review` },
         { href: "/outbox", label: "Sent", icon: Send },
         { href: "/replies", label: "Replies", icon: Reply },
@@ -94,8 +96,6 @@ export function AppSidebar() {
             items: [
               { href: "/icps", label: "Who you target (ICPs)", icon: Target },
               { href: "/products", label: "What you sell", icon: Package },
-              { href: "/smart-lists", label: "Smart lists", icon: ListTree },
-              { href: "/leads", label: "Leads", icon: Users },
               { href: "/prompts", label: "Prompts", icon: FileText },
               { href: "/examples", label: "Example emails", icon: Mail },
               { href: "/feedback", label: "Feedback", icon: MessageSquareText },
