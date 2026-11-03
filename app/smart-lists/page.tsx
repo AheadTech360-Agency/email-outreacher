@@ -181,8 +181,8 @@ function SmartLists({ wsId }: { wsId: string }) {
           }
         />
       ) : (
-        <div className="grid gap-5 lg:grid-cols-[280px_1fr]">
-          <ul className="space-y-1">
+        <div className="grid items-start gap-5 lg:grid-cols-[280px_1fr]">
+          <ul className="space-y-1 lg:sticky lg:top-4 lg:max-h-[calc(100svh-2rem)] lg:overflow-y-auto lg:pr-1">
             {(lists.data?.lists ?? []).map((l) => (
               <li key={l.id}>
                 <button
