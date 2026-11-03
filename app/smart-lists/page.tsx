@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchPipeline, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
   useApi, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
@@ -627,12 +627,15 @@ function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
   onAdded: () => void
 }) {
   const companies = useApi(() => fetchPipeline(wsId), [wsId])
+  const icps = useApi(() => fetchIcps(wsId), [wsId])
+  const [icpFilter, setIcpFilter] = useState("all")
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const query = search.trim().toLowerCase()
   const matches = (companies.data ?? []).filter((c) =>
+    (icpFilter === "all" || (icpFilter === "none" ? !c.icpId : c.icpId === icpFilter)) &&
     [c.name, c.domain, c.city, c.state].some((v) => v?.toLowerCase().includes(query)),
   )
   const [pageSize, setPageSize] = useState(25)
@@ -661,6 +664,26 @@ function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
         </DialogHeader>
         <Input aria-label="Search workspace companies" placeholder="Search companies, websites or locations" value={search}
           disabled={busy} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+        <Select value={icpFilter} disabled={busy} onValueChange={(value) => { setIcpFilter(value); setPage(1) }}>
+          <SelectTrigger className="w-full" aria-label="Filter companies by ICP">
+            <SelectValue placeholder="All ICPs" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All ICPs</SelectItem>
+            <SelectItem value="none">No ICP</SelectItem>
+            {(icps.data ?? []).map((icp) => (
+              <SelectItem key={icp.id} value={icp.id}>{icp.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {icps.error && <div role="alert" className="text-sm">
+          <p>Could not load ICP filters: {icps.error}</p>
+          <Button variant="outline" size="sm" onClick={icps.reload}>Retry ICPs</Button>
+        </div>}
+        {picked.size > 0 && <div className="flex items-center justify-between text-sm">
+          <span>{picked.size} selected across all filters</span>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setPicked(new Set())}>Clear selection</Button>
+        </div>}
         {companies.error ? (
           <div role="alert" className="space-y-2 text-sm">
             <p>{companies.error}</p>
@@ -679,11 +702,11 @@ function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
                   })
                 }} />
                 <span><span className="font-medium">{c.name}</span>
-                  <span className="block text-xs text-muted-foreground">{[c.domain, c.city, c.state].filter(Boolean).join(" ? ")}</span>
+                  <span className="block text-xs text-muted-foreground">{[c.domain, c.city, c.state].filter(Boolean).join(", ")}</span>
                 </span>
               </label>
             ))}
-            {!matches.length && <p className="py-4 text-sm text-muted-foreground">{query ? "No matching companies." : "No workspace companies yet. Find companies on the Companies page first."}</p>}
+            {!matches.length && <p className="py-4 text-sm text-muted-foreground">{query || icpFilter !== "all" ? "No matching companies." : "No workspace companies yet. Find companies on the Companies page first."}</p>}
           </div>
         )}
         <Pager page={page} pageSize={pageSize} total={matches.length} onPage={setPage}
