@@ -1490,6 +1490,10 @@ export const moveToSmartList = (
 export const sortSmartLists = (workspaceId: string, kind: SmartListKind, limit: number) =>
   runJob<SortListsResult>("/smart-lists/sort", { workspaceId, body: { kind, limit } })
 
+/** Which list each company or person is in: member id to list id. */
+export const fetchSmartListMemberships = (workspaceId: string, kind: SmartListKind) =>
+  api<Record<string, string>>(`/smart-lists/memberships?kind=${kind}`, { workspaceId })
+
 export const createSmartList = (workspaceId: string, kind: SmartListKind, name: string) =>
   api<SmartList>("/smart-lists", { workspaceId, method: "POST", body: { kind, name } })
 

@@ -20,7 +20,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchAllStakeholders, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartListMemberships, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
   useApi, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
@@ -412,13 +412,11 @@ function ListDetail({
           {d.count.toLocaleString()} {what(d.count)}
         </span>
         <div className="ml-auto flex flex-wrap gap-2">
-          {d.kind === "company" && (
-            <ManagerOnly>
-              <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-                <Plus /> Add companies
-              </Button>
-            </ManagerOnly>
-          )}
+          <ManagerOnly>
+            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+              <Plus /> Add {d.kind === "company" ? "companies" : "people"}
+            </Button>
+          </ManagerOnly>
           {name === null && (
             <ManagerOnly>
               <Button variant="ghost" size="sm" onClick={() => setName(d.name)}>
@@ -440,11 +438,13 @@ function ListDetail({
           </ManagerOnly>
         </div>
       </div>
-      {adding && d.kind === "company" && (
-        <AddCompaniesDialog
+      {adding && (
+        <AddMembersDialog
           wsId={wsId}
+          kind={d.kind}
           listId={id}
           listName={d.name}
+          lists={lists}
           onClose={() => setAdding(false)}
           onAdded={() => {
             setAdding(false)
@@ -617,124 +617,235 @@ function ListDetail({
   )
 }
 
+type Candidate = { id: string; name: string; detail: string; icpId: string | null }
 
-
-function AddCompaniesDialog({ wsId, listId, listName, onClose, onAdded }: {
+/** Add companies or people to a list. Each row says which list it's in now; those already in this list aren't
+ * offered. The box at the top selects only the rows on screen; "Select all" takes every match. */
+function AddMembersDialog({
+  wsId,
+  kind,
+  listId,
+  listName,
+  lists,
+  onClose,
+  onAdded,
+}: {
   wsId: string
+  kind: SmartListKind
   listId: string
   listName: string
+  lists: SmartList[]
   onClose: () => void
   onAdded: () => void
 }) {
-  const companies = useApi(() => fetchPipeline(wsId), [wsId])
+  const noun = kind === "company" ? { one: "company", many: "companies" } : { one: "person", many: "people" }
+  const candidates = useApi<Candidate[]>(
+    async () =>
+      kind === "company"
+        ? (await fetchPipeline(wsId)).map((c) => ({
+            id: c.id,
+            name: c.name,
+            detail: [c.domain, [c.city, c.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
+            icpId: c.icpId,
+          }))
+        : (await fetchAllStakeholders(wsId)).map((p) => ({
+            id: p.id,
+            name: `${p.firstName} ${p.lastName}`.trim() || p.email || "Unnamed",
+            detail: [p.title, p.organizationName, p.email].filter(Boolean).join(" · "),
+            icpId: p.icpId,
+          })),
+    [wsId, kind],
+  )
+  const membership = useApi(() => fetchSmartListMemberships(wsId, kind), [wsId, kind])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
-  const [icpFilter, setIcpFilter] = useState("all")
+  const listName_ = new Map(lists.map((l) => [l.id, l.name]))
   const [search, setSearch] = useState("")
+  const [icpFilter, setIcpFilter] = useState("all")
+  const [from, setFrom] = useState("all")
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
+
+  const inList = (id: string) => membership.data?.[id] ?? null
   const query = search.trim().toLowerCase()
-  const matches = (companies.data ?? []).filter((c) =>
-    (icpFilter === "all" || (icpFilter === "none" ? !c.icpId : c.icpId === icpFilter)) &&
-    [c.name, c.domain, c.city, c.state].some((v) => v?.toLowerCase().includes(query)),
-  )
-  const [pageSize, setPageSize] = useState(25)
+  const matches = (candidates.data ?? []).filter((c) => {
+    const current = inList(c.id)
+    if (current === listId) return false
+    if (icpFilter !== "all" && (icpFilter === "none" ? c.icpId : c.icpId !== icpFilter)) return false
+    if (from !== "all" && (from === "none" ? current : current !== from)) return false
+    return !query || c.name.toLowerCase().includes(query) || c.detail.toLowerCase().includes(query)
+  })
   const visible = matches.slice((page - 1) * pageSize, page * pageSize)
+  const pageState = visible.length && visible.every((c) => picked.has(c.id)) ? true : visible.some((c) => picked.has(c.id)) ? "indeterminate" : false
+  const allPicked = matches.length > 0 && matches.every((c) => picked.has(c.id))
+  const moving = [...picked].filter((id) => inList(id)).length
+  const loading = !candidates.data || !membership.data
+  const error = candidates.error ?? membership.error
+
+  const toggle = (ids: string[], on: boolean) =>
+    setPicked((current) => {
+      const next = new Set(current)
+      for (const id of ids) {
+        if (on) next.add(id)
+        else next.delete(id)
+      }
+      return next
+    })
+  const filter = (set: (v: string) => void) => (v: string) => {
+    set(v)
+    setPage(1)
+  }
+
   const add = async () => {
     if (busy || !picked.size) return
     setBusy(true)
     try {
-      const result = await moveToSmartList(wsId, "company", [...picked], { listId })
-      toast.success(`Added ${result.moved} companies to ${listName}`)
+      const r = await moveToSmartList(wsId, kind, [...picked], { listId })
+      toast.success(`Added ${r.moved.toLocaleString()} ${r.moved === 1 ? noun.one : noun.many} to ${listName}`)
       onAdded()
     } catch (e) {
-      toast.error("Couldn't add companies", { description: errorText(e) })
-    } finally {
+      toast.error(`Couldn't add the ${noun.many}`, { description: errorText(e) })
       setBusy(false)
     }
   }
+
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && onClose()}>
-      <DialogContent>
+      <DialogContent className="gap-4 sm:max-w-2xl!">
         <DialogHeader>
-          <DialogTitle>Add companies to {listName}</DialogTitle>
+          <DialogTitle>Add {noun.many} to {listName}</DialogTitle>
           <DialogDescription>
-            Choose workspace companies. Companies in another list move here; companies already here stay here. Their ICP stays the same.
+            Those in another list move here. Their ICP doesn&apos;t change.
           </DialogDescription>
         </DialogHeader>
-        <Input aria-label="Search workspace companies" placeholder="Search companies, websites or locations" value={search}
-          disabled={busy} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-        <Select value={icpFilter} disabled={busy} onValueChange={(value) => { setIcpFilter(value); setPage(1) }}>
-          <SelectTrigger className="w-full" aria-label="Filter companies by ICP">
-            <SelectValue placeholder="All ICPs" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All ICPs</SelectItem>
-            <SelectItem value="none">No ICP</SelectItem>
-            {(icps.data ?? []).map((icp) => (
-              <SelectItem key={icp.id} value={icp.id}>{icp.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {icps.error && <div role="alert" className="text-sm">
-          <p>Could not load ICP filters: {icps.error}</p>
-          <Button variant="outline" size="sm" onClick={icps.reload}>Retry ICPs</Button>
-        </div>}
-        <label className="flex items-center gap-2 text-sm">
-          <Checkbox
-            aria-label="Select all matching companies"
-            disabled={busy || !matches.length || !!companies.error}
-            checked={matches.length > 0 && matches.every((c) => picked.has(c.id))
-              ? true : matches.some((c) => picked.has(c.id)) ? "indeterminate" : false}
-            onCheckedChange={(checked) => {
-              setPicked((current) => {
-                const next = new Set(current)
-                for (const c of matches) {
-                  if (checked === true) next.add(c.id)
-                  else next.delete(c.id)
-                }
-                return next
-              })
-            }}
-          />
-          Select all matching companies ({matches.length})
-        </label>
-        {picked.size > 0 && <div className="flex items-center justify-between text-sm">
-          <span>{picked.size} selected across all filters</span>
-          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setPicked(new Set())}>Clear selection</Button>
-        </div>}
-        {companies.error ? (
-          <div role="alert" className="space-y-2 text-sm">
-            <p>{companies.error}</p>
-            <Button variant="outline" onClick={companies.reload}>Try again</Button>
+
+        <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <div className="relative">
+            <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label={`Search ${noun.many}`}
+              className="pl-8"
+              placeholder={kind === "company" ? "Search names, websites, places" : "Search names, titles, companies, emails"}
+              value={search}
+              disabled={busy}
+              onChange={(e) => filter(setSearch)(e.target.value)}
+            />
           </div>
-        ) : !companies.data ? <p className="text-sm">Loading companies...</p> : (
-          <div className="max-h-80 overflow-y-auto">
-            {visible.map((c) => (
-              <label key={c.id} className="flex cursor-pointer items-center gap-3 border-b py-3 text-sm">
-                <Checkbox checked={picked.has(c.id)} disabled={busy} onCheckedChange={(checked) => {
-                  setPicked((current) => {
-                    const next = new Set(current)
-                    if (checked) next.add(c.id)
-                    else next.delete(c.id)
-                    return next
-                  })
-                }} />
-                <span><span className="font-medium">{c.name}</span>
-                  <span className="block text-xs text-muted-foreground">{[c.domain, c.city, c.state].filter(Boolean).join(", ")}</span>
-                </span>
-              </label>
-            ))}
-            {!matches.length && <p className="py-4 text-sm text-muted-foreground">{query || icpFilter !== "all" ? "No matching companies." : "No workspace companies yet. Find companies on the Companies page first."}</p>}
+          <Select value={from} disabled={busy} onValueChange={filter(setFrom)}>
+            <SelectTrigger className="w-full sm:w-44" aria-label="Which list they're in now">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">In any list</SelectItem>
+              <SelectItem value="none">Not in a list</SelectItem>
+              {lists
+                .filter((l) => l.id !== listId)
+                .map((l) => (
+                  <SelectItem key={l.id} value={l.id}>
+                    In {l.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
+          <Select value={icpFilter} disabled={busy} onValueChange={filter(setIcpFilter)}>
+            <SelectTrigger className="w-full sm:w-44" aria-label="Filter by ICP">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Any ICP</SelectItem>
+              <SelectItem value="none">No ICP</SelectItem>
+              {(icps.data ?? []).map((icp) => (
+                <SelectItem key={icp.id} value={icp.id}>
+                  {icp.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="overflow-hidden rounded-md border">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/40 px-3 py-2 text-sm">
+            <Checkbox
+              aria-label={`Select the ${visible.length} on this page`}
+              disabled={busy || loading || !visible.length}
+              checked={pageState}
+              onCheckedChange={(v) => toggle(visible.map((c) => c.id), v === true)}
+            />
+            <span className="tabular-nums">
+              {picked.size ? `${picked.size.toLocaleString()} selected` : `${matches.length.toLocaleString()} ${matches.length === 1 ? noun.one : noun.many}`}
+            </span>
+            <span className="ml-auto flex items-center gap-1">
+              {matches.length > visible.length && !allPicked && (
+                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => toggle(matches.map((c) => c.id), true)}>
+                  Select all {matches.length.toLocaleString()}
+                </Button>
+              )}
+              {picked.size > 0 && (
+                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => setPicked(new Set())}>
+                  Clear
+                </Button>
+              )}
+            </span>
           </div>
-        )}
-        <Pager page={page} pageSize={pageSize} total={matches.length} onPage={setPage}
-          onPageSize={(size) => { setPageSize(size); setPage(1) }} />
-        <DialogFooter>
-          <Button variant="outline" disabled={busy} onClick={onClose}>Cancel</Button>
-          <Button disabled={busy || !picked.size || !companies.data || !!companies.error} onClick={() => void add()}>
-            {busy ? "Adding..." : `Add selected (${picked.size})`}
-          </Button>
+          {error ? (
+            <div role="alert" className="space-y-2 p-4 text-sm">
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={() => (candidates.reload(), membership.reload())}>
+                Try again
+              </Button>
+            </div>
+          ) : loading ? (
+            <p className="p-4 text-sm text-muted-foreground">Loading {noun.many}…</p>
+          ) : !matches.length ? (
+            <p className="p-4 text-sm text-muted-foreground">
+              {query || icpFilter !== "all" || from !== "all" ? `No ${noun.many} match.` : `Every ${noun.one} is already in ${listName}.`}
+            </p>
+          ) : (
+            <ul className="max-h-80 divide-y divide-rule overflow-y-auto">
+              {visible.map((c) => {
+                const current = inList(c.id)
+                return (
+                  <li key={c.id}>
+                    <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50">
+                      <Checkbox checked={picked.has(c.id)} disabled={busy} onCheckedChange={(v) => toggle([c.id], v === true)} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{c.name}</span>
+                        {c.detail && <span className="block truncate text-xs text-muted-foreground">{c.detail}</span>}
+                      </span>
+                      <span className={cn("max-w-40 flex-none truncate text-xs", current ? "text-muted-foreground" : "text-foreground")}>
+                        {current ? `In ${listName_.get(current) ?? "another list"}` : "Not in a list"}
+                      </span>
+                    </label>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        <Pager
+          page={page}
+          pageSize={pageSize}
+          total={matches.length}
+          onPage={setPage}
+          onPageSize={(size) => {
+            setPageSize(size)
+            setPage(1)
+          }}
+        />
+        <DialogFooter className="items-center sm:justify-between">
+          <p className="text-xs text-muted-foreground">
+            {moving ? `${moving.toLocaleString()} of them will leave the list they're in now.` : ""}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="outline" disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={busy || !picked.size} onClick={() => void add()}>
+              {busy ? "Adding…" : picked.size ? `Add ${picked.size.toLocaleString()}` : "Add"}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
