@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils"
 const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
   { key: "find", label: "Find companies", what: "A Google Maps search, or the companies you already have" },
   { key: "research", label: "Verify companies", what: "Reads each website and Instagram, checks the ICP's rule, scores the fit" },
-  { key: "people", label: "Find people and emails", what: "LinkedIn search at the qualified companies, with work emails" },
+  { key: "people", label: "Fetch LinkedIn profiles", what: "Where no one has an email yet: LinkedIn profiles at the qualified companies, with work emails" },
   { key: "leads", label: "Make leads", what: "The people found become leads" },
   { key: "posts", label: "Read their posts", what: "Their recent LinkedIn and Instagram posts, for the opening line" },
   { key: "write", label: "Write emails", what: "One email each, from your templates; they wait for your review" },
