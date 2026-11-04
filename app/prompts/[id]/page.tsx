@@ -9,6 +9,7 @@ import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { OutputSchemaView } from "@/components/prompt/output-schema"
 import { PromptBody } from "@/components/prompt/prompt-body"
+import { TESTABLE_KINDS, TestPrompt } from "@/components/prompt/test-prompt"
 import { VersionHistory } from "@/components/prompt/version-history"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -33,8 +34,9 @@ export default function PromptEditorPage() {
   const { templates, versions, promptsStatus, promptsError, reloadPrompts } = useStore()
   const template = templates.find((t) => t.id === id)
   const version = versions.find((v) => v.id === template?.currentVersionId)
-  // Lives outside Editor so the open tab survives the remount after saving or restoring a version.
-  const [tab, setTab] = useState("history")
+  // Lives outside Editor so the open tab survives the remount after saving or restoring a version. Email and
+  // follow-up prompts open on their test.
+  const [tab, setTab] = useState("test")
 
   // Prompts load from the backend; only call it missing once they have.
   if (promptsStatus === "loading")
@@ -77,7 +79,8 @@ function Editor({
   tab: string
   onTabChange: (tab: string) => void
 }) {
-  const { saveVersion, duplicateTemplate, setDefaultTemplate } = useStore()
+  const { saveVersion, duplicateTemplate, setDefaultTemplate, currentWorkspaceId } = useStore()
+  const testable = TESTABLE_KINDS.includes(template.kind)
   const router = useRouter()
   const [draft, setDraft] = useState<VersionDraft>(() => toDraft(version))
   const [saveOpen, setSaveOpen] = useState(false)
@@ -164,11 +167,17 @@ function Editor({
       <div className="space-y-6 px-4 pb-10 md:px-8">
         <PromptBody kind={template.kind} draft={draft} setDraft={setDraft} />
 
-        <Tabs value={tab} onValueChange={onTabChange}>
+        <Tabs value={testable || tab !== "test" ? tab : "history"} onValueChange={onTabChange}>
           <TabsList>
+            {testable && <TabsTrigger value="test">Test on a person</TabsTrigger>}
             <TabsTrigger value="history">Version history</TabsTrigger>
             <TabsTrigger value="output">Output schema</TabsTrigger>
           </TabsList>
+          {testable && (
+            <TabsContent value="test" className="pt-2">
+              <TestPrompt wsId={currentWorkspaceId} kind={template.kind} draft={draft} />
+            </TabsContent>
+          )}
           <TabsContent value="history" className="pt-2">
             <VersionHistory template={template} onRestored={() => undefined} />
           </TabsContent>

@@ -36,7 +36,7 @@ const FILTERS: { value: string; label: string; test: (s: OutboxState) => boolean
   { value: "finished", label: "Finished", test: (s) => s === "finished" || s === "stopped" },
 ]
 
-/** Everything Coldbrew queued into CheapSequencer: who, from which mailbox, and which of the three emails went out. */
+/** Everything Coldbrew queued into CheapSequencer: who, from which mailbox, and which of the five emails went out. */
 export function OutboxView() {
   return <WorkspaceGate>{(wsId) => <Outbox key={wsId} wsId={wsId} />}</WorkspaceGate>
 }
@@ -196,7 +196,7 @@ function LeadSheet({ row, onClose }: { row: OutboxRow; onClose: () => void }) {
           <div className="flex flex-wrap items-center gap-2 pt-1">
             <Pill tone={STATE[row.state].tone}>{STATE[row.state].label}</Pill>
             <span className="text-xs text-muted-foreground">
-              {row.campaign} · {row.mailbox ? `all three from ${row.mailbox}` : "mailbox assigned when the campaign starts"}
+              {row.campaign} · {row.mailbox ? `all five from ${row.mailbox}` : "mailbox assigned when the campaign starts"}
             </span>
           </div>
         </SheetHeader>

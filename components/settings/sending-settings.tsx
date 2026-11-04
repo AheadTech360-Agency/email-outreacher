@@ -28,6 +28,8 @@ function Form({ wsId, saved, onSaved }: { wsId: string; saved: Values; onSaved: 
   const errors = {
     followupFallback2: draft.followupFallback2.trim() ? "" : "Write what email 2 says until it's personalized",
     followupFallback3: draft.followupFallback3.trim() ? "" : "Write what email 3 says until it's personalized",
+    followupFallback4: draft.followupFallback4.trim() ? "" : "Write what email 4 says until it's personalized",
+    followupFallback5: draft.followupFallback5.trim() ? "" : "Write what email 5 says until it's personalized",
     followupLeadHours: Number.isInteger(hours) && hours >= 2 && hours <= 72 ? "" : "Use a whole number from 2 to 72",
   }
   const values: Values = { ...draft, followupLeadHours: hours }
@@ -52,7 +54,7 @@ function Form({ wsId, saved, onSaved }: { wsId: string; saved: Values; onSaved: 
     }
   }
 
-  const text = (key: "followupFallback2" | "followupFallback3", label: string, hint: string) => (
+  const text = (key: "followupFallback2" | "followupFallback3" | "followupFallback4" | "followupFallback5", label: string, hint: string) => (
     <div className="space-y-1.5">
       <Label htmlFor={key}>{label}</Label>
       <Textarea
@@ -90,7 +92,9 @@ function Form({ wsId, saved, onSaved }: { wsId: string; saved: Values; onSaved: 
       </div>
       {missing && <p className="text-xs text-warning">Emails can&apos;t be queued until both are filled in.</p>}
       {text("followupFallback2", "Email 2 until it's personalized", "{{first_name}} is filled in. Only goes out if the personal follow-up couldn't be written in time.")}
-      {text("followupFallback3", "Email 3 until it's personalized", "Same, for the last email.")}
+      {text("followupFallback3", "Email 3 until it's personalized", "Same, for day 6.")}
+      {text("followupFallback4", "Email 4 until it's personalized", "Same, for day 10.")}
+      {text("followupFallback5", "Email 5 until it's personalized", "Same, for the last email on day 16.")}
       <div className="space-y-1.5">
         <Label htmlFor="followupLeadHours">Write follow-ups this many hours before they&apos;re due</Label>
         <Input

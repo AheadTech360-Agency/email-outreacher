@@ -74,6 +74,8 @@ const FOLLOWUP_VARS = [
   "email1.subject",
   "email1.body",
   "email2.body",
+  "email3.body",
+  "email4.body",
   "followup.step",
 ]
 
@@ -124,7 +126,7 @@ export function availableVariables(kind: PromptKind): string[] {
   if (kind === "verify") return VERIFY_VARS
   if (kind === "sort") return SORT_VARS
   if (kind === "sort_people") return ["sort.lists", "sort.items"]
-  if (kind === "followup2" || kind === "followup3") return [...FOLLOWUP_VARS, ...PRODUCT_VARS]
+  if (kind.startsWith("followup")) return [...FOLLOWUP_VARS, ...PRODUCT_VARS]
   const person = [...ICP_VARS, ...LEAD_VARS, "lead.extra.<column>", ...POST_VARS, ...COMPANY_VARS, "company.summary", ...PRODUCT_VARS]
   if (kind === "hook") return person
   if (kind === "email") return [...person, ...HOOK_VARS, ...EXAMPLE_VARS]

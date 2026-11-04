@@ -160,7 +160,17 @@ export interface EnrichmentItem {
   mediaType: MediaType
 }
 
-export type PromptKind = "verify" | "hook" | "email" | "score" | "followup2" | "followup3" | "sort" | "sort_people"
+export type PromptKind =
+  | "verify"
+  | "hook"
+  | "email"
+  | "score"
+  | "followup2"
+  | "followup3"
+  | "followup4"
+  | "followup5"
+  | "sort"
+  | "sort_people"
 
 export interface PromptTemplate {
   id: string

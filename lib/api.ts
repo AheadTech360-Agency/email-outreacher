@@ -357,6 +357,8 @@ export interface SendingSettings {
   senderWebsite: string
   followupFallback2: string
   followupFallback3: string
+  followupFallback4: string
+  followupFallback5: string
   followupLeadHours: number
 }
 
@@ -443,7 +445,7 @@ export interface OutboxRow {
   company: string
   campaignId: string
   campaign: string
-  /** The mailbox all three emails go out from, once CheapSequencer has assigned one. */
+  /** The mailbox all five emails go out from, once CheapSequencer has assigned one. */
   mailbox: string | null
   state: OutboxState
   sent: number
@@ -453,7 +455,7 @@ export interface OutboxRow {
   steps: OutboxStep[]
 }
 
-/** Every queued lead and its three emails, as of the last follow-up check. */
+/** Every queued lead and its five emails, as of the last follow-up check. */
 export const fetchOutbox = (workspaceId: string) => api<OutboxRow[]>("/sending/outbox", { workspaceId })
 
 export interface ReplyThread {
@@ -594,6 +596,32 @@ export const revealStakeholders = (workspaceId: string, stakeholderIds: string[]
   runJob<StakeholderRevealResult>("/stakeholders/reveal", { workspaceId, body: { stakeholderIds } })
 
 export const fetchAllStakeholders = (workspaceId: string) => api<Stakeholder[]>("/stakeholders", { workspaceId })
+
+export interface PromptTestResult {
+  name: string
+  company: string
+  /** The thread up to the email tested. tested: this prompt; written: the current prompt, now; saved: theirs already. */
+  emails: { step: number; subject: string; body: string; source: "tested" | "written" | "saved" }[]
+  hook: string | null
+  score: number | null
+  reasons: string[]
+  confidence: number | null
+  costUsd: number
+}
+
+/** Write one email for a person with a prompt as it's being edited. Nothing is saved; the cost is on Usage. */
+export const testPrompt = (
+  workspaceId: string,
+  body: {
+    kind: "email" | "followup2" | "followup3" | "followup4" | "followup5"
+    stakeholderId: string
+    systemPrompt: string
+    userPrompt: string
+    model: string
+    maxTokens: number
+    maxPosts: number | null
+  },
+) => api<PromptTestResult>("/emails/test-prompt", { workspaceId, method: "POST", body })
 
 /** One person, for their page. */
 /** Everything stored about a record, grouped: {group: {label: value}}. */

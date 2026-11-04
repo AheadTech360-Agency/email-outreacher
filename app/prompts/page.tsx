@@ -45,12 +45,22 @@ const SECTIONS: { kind: PromptKind; title: string; description: string }[] = [
   {
     kind: "followup2",
     title: "Follow-up (email 2)",
-    description: "Written just before it's due, only for leads who haven't replied. The default is used for every ICP.",
+    description: "Day 3. Written just before it's due, only for leads who haven't replied. The default is used for every ICP.",
   },
   {
     kind: "followup3",
     title: "Follow-up (email 3)",
-    description: "The last email, closing the loop. Written just before it's due, only if there's still no reply.",
+    description: "Day 6. Written just before it's due, only if there's still no reply.",
+  },
+  {
+    kind: "followup4",
+    title: "Follow-up (email 4)",
+    description: "Day 10. A new angle, written just before it's due, only if there's still no reply.",
+  },
+  {
+    kind: "followup5",
+    title: "Follow-up (email 5)",
+    description: "Day 16, the last email: closes politely. Written just before it's due, only if there's still no reply.",
   },
   {
     kind: "sort",

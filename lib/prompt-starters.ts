@@ -161,6 +161,57 @@ Example emails in our voice:
     maxTokens: 4096,
     maxPosts: null,
   },
+  followup4: {
+    systemPrompt:
+      "You write the fourth email in a five-email cold sequence, as a reply in the same thread, about ten days after the first. The person hasn't answered the first three. Change the angle: a relevance check, a short free tip, a different proof line or a new confirmed finding. Don't repeat the earlier emails and don't hint that it's the last one. 25 to 60 words, one ask at most, no em dashes, no invented facts, no sign-off. Return the body and a confidence from 0 to 100.",
+    userPrompt: `Write the fourth email to {{lead.firstName}} ({{lead.title}} at {{lead.company}}).
+
+The emails already sent:
+Subject: {{email1.subject}}
+{{email1.body}}
+
+{{email2.body}}
+
+{{email3.body}}
+
+Other hooks we found:
+{{hooks}}
+
+What we sell: {{product.name}}: {{product.value}}
+Proof (word for word, or not at all): {{product.proof}}
+Never use: {{icp.wordsToAvoid}}
+
+Example emails in our voice:
+{{examples.samples}}`,
+    temperature: 0.7,
+    maxTokens: 4096,
+    maxPosts: null,
+  },
+  followup5: {
+    systemPrompt:
+      "You write the fifth and last email in a five-email cold sequence, as a reply in the same thread, about sixteen days after the first. The person hasn't answered the first four. Close the sequence politely, leave one easy door open from the offer, and end with a yes-or-no question or an easy out. 20 to 50 words, no new pitch, no pressure, no em dashes, no invented facts, no sign-off. Return the body and a confidence from 0 to 100.",
+    userPrompt: `Write the last email to {{lead.firstName}} at {{lead.company}}.
+
+The emails already sent:
+Subject: {{email1.subject}}
+{{email1.body}}
+
+{{email2.body}}
+
+{{email3.body}}
+
+{{email4.body}}
+
+Easiest next step: {{product.offer}}
+Call to action: {{product.cta}}
+Tone: {{icp.tone}}
+
+Example emails in our voice:
+{{examples.samples}}`,
+    temperature: 0.7,
+    maxTokens: 4096,
+    maxPosts: null,
+  },
   sort: {
     systemPrompt:
       "You sort businesses for a sales team. For each one you choose two things.\n\n1. Its smart list: one high-level industry, named in one to three plain words, like \"Retail\", \"Manufacturing\", \"Healthcare\", \"Construction\", \"Food & Beverage\", \"Printing\", \"Professional Services\", \"Real Estate\", \"Automotive\", \"Education\", \"Nonprofit\".\n- Always the broad industry, never a sub-category or a combination. \"Retail\", never \"Retail - DTF\", \"Apparel Retail\" or \"Online T-shirt Store\".\n- If an existing list is even remotely similar, use it, spelled exactly as given. Start a new list only when nothing existing fits at all.\n- When there's too little to tell what the business does, use \"Uncategorized\".\n\n2. Its ICP: the name of the one ICP (ideal customer profile) this business is, spelled exactly as given, or an empty string when none of them fits. Fit means the business is the kind the ICP describes (what it does and sells, who it serves), not merely in a related trade. Don't stretch: an empty ICP is the right answer for a business no ICP describes.\n\nJudge from what the business says about itself first (its website), then its listing. Use only the evidence given.\nreason: a few words naming the evidence, e.g. \"sells custom DTF transfers online\".\nReturn one item for every id you're given, with the same id.",
@@ -186,6 +237,8 @@ export const KIND_LABEL: Record<PromptKind, string> = {
   score: "Email scoring",
   followup2: "Follow-up (email 2)",
   followup3: "Follow-up (email 3)",
+  followup4: "Follow-up (email 4)",
+  followup5: "Follow-up (email 5)",
   sort: "Company sorting",
   sort_people: "People sorting",
 }

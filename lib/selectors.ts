@@ -74,4 +74,4 @@ export function isIcpPromptKind(kind: PromptKind): kind is IcpPromptKind {
 }
 
 /** Follow-up prompts: every ICP uses the default one. */
-export const FOLLOWUP_KINDS: PromptKind[] = ["followup2", "followup3"]
+export const FOLLOWUP_KINDS: PromptKind[] = ["followup2", "followup3", "followup4", "followup5"]

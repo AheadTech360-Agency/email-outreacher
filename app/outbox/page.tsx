@@ -8,7 +8,7 @@ export default function OutboxPage() {
     <>
       <PageHeader
         title="Outbox"
-        description="Every lead you queued, the mailbox their emails go out from, and which of the three emails have been sent."
+        description="Every lead you queued, the mailbox their emails go out from, and which of their five emails have gone out. A reply stops the rest."
       />
       <div className="px-4 pb-10 md:px-8">
         <OutboxView />
