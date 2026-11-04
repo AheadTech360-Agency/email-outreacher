@@ -33,8 +33,10 @@ import { cn } from "@/lib/utils"
 const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
   { key: "find", label: "Find companies", what: "A Google Maps search, or the companies you already have" },
   { key: "research", label: "Verify companies", what: "Reads each website and Instagram, checks the ICP's rule, scores the fit" },
-  { key: "people", label: "Fetch LinkedIn profiles", what: "Where no one has an email yet: LinkedIn profiles at the qualified companies, with work emails" },
-  { key: "leads", label: "Make leads", what: "The people found become leads" },
+  { key: "website", label: "Read websites", what: "The websites not read yet: free, no AI" },
+  { key: "people", label: "Fetch LinkedIn profiles", what: "Where no one has a verified email yet: LinkedIn profiles at the qualified companies, with work emails" },
+  { key: "leads", label: "Make leads", what: "The people to write to; anyone already contacted is skipped" },
+  { key: "profiles", label: "Fill in profiles", what: "Their LinkedIn profiles and their company's LinkedIn page and Instagram, where not read yet" },
   { key: "posts", label: "Read their posts", what: "Their recent LinkedIn and Instagram posts, for the opening line" },
   { key: "write", label: "Write emails", what: "One email each, from your templates; they wait for your review" },
 ]
@@ -248,7 +250,7 @@ function Steps({ run }: { run: QuickstartDetail }) {
     <section className="space-y-3">
       <h2 className="text-base font-semibold">Steps</h2>
       <ol className="divide-y divide-rule rounded-lg border">
-        {STEPS.map((s, i) => {
+        {(run.stepOrder?.length ? STEPS.filter((s) => run.stepOrder!.includes(s.key)) : STEPS.filter((s) => s.key !== "website" && s.key !== "profiles")).map((s, i) => {
           const step = run.steps[s.key]
           const state = step?.state ?? "waiting"
           const Icon = { waiting: Circle, running: Loader2, done: Check, skipped: Minus, failed: X }[state]

@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { fetchQuickstartRuns, fetchSmartLists, runWhere, startQuickstart, useApi } from "@/lib/api"
+import { ENRICH_COST } from "@/lib/costs"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import type { ICP } from "@/lib/types"
@@ -25,6 +26,10 @@ import type { ICP } from "@/lib/types"
 // What each step costs, at the prices Coldbrew uses elsewhere (Google Maps, Apify on the Bronze plan, Claude Haiku).
 const PRICE = {
   googleRequest: 0.035,
+  // Filling in what's missing (lib/costs ENRICH_COST): a person's LinkedIn profile, a company's Instagram and LinkedIn page.
+  profile: ENRICH_COST.linkedinProfile,
+  instagramProfile: ENRICH_COST.instagram,
+  linkedinPage: ENRICH_COST.linkedinCompany,
   verify: 0.004, // website (free) + Instagram profile + Claude's score
   linkedinCompany: 0.02, // the LinkedIn actor's start fee, once per company
   linkedinPerson: 0.003,
@@ -117,9 +122,14 @@ function NewRun({ wsId }: { wsId: string }) {
   const lines = existing
     ? [
         { step: `Take ${num("companies")} of your companies (already verified)`, cost: 0 },
+        { step: "Read the websites not read yet (no AI)", cost: 0 },
         ...(findPeople
-          ? [{ step: `Find people on LinkedIn where no one has an email yet (at most)`, cost: peopleCost }]
+          ? [{ step: `Find people on LinkedIn where no one has a verified email yet (at most)`, cost: peopleCost }]
           : []),
+        {
+          step: `Fill in profiles for the ${leads} people written to and their companies, where not read yet`,
+          cost: leads * (PRICE.profile + PRICE.instagramProfile + PRICE.linkedinPage),
+        },
       ]
     : [
         { step: "Find companies (Google Maps)", cost: num("requests") * PRICE.googleRequest },

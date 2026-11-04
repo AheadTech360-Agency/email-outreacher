@@ -1314,7 +1314,7 @@ export const importLeadsCsv = (workspaceId: string, icpId: string, csv: string, 
 
 // ---------- Quick Start: an ICP from a Google Maps search to drafts in review, in the background ----------
 
-export type QuickstartStepKey = "find" | "research" | "people" | "leads" | "posts" | "write"
+export type QuickstartStepKey = "find" | "research" | "website" | "people" | "leads" | "profiles" | "posts" | "write"
 
 export interface QuickstartSettings {
   /** google_maps: search for new companies. existing: companies already here (imported) no one has written to. */
@@ -1355,7 +1355,10 @@ export interface QuickstartRun {
   status: "queued" | "running" | "waiting" | "done" | "stopped" | "failed" | "cancelled"
   step: QuickstartStepKey | "done"
   settings: QuickstartSettings
-  steps: Record<QuickstartStepKey, QuickstartStep>
+  steps: Partial<Record<QuickstartStepKey, QuickstartStep>>
+  /** The run's own steps, in order: a run on your companies has website and profiles steps; a past run shows
+   * only the steps it went through. */
+  stepOrder?: QuickstartStepKey[]
   spentUsd: number
   spendLimitUsd: number
   detail: string | null
