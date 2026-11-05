@@ -1719,7 +1719,7 @@ export interface AnalysisSnapshot extends AnalysisMetrics {label:string}
 export interface AnalysisFinding {
   title:string;category:string;confidence:"low"|"medium"|"high";observation:string;evidence:string;recommendation:string;exampleEmailIds:string[]
 }
-export interface AnalysisExample {emailId:string;subject:string;body:string;hook:string;source:string;replied:boolean;rating:string|null;icpId:string|null;prompt:string}
+export interface AnalysisExample {emailId:string;subject:string;body:string;hook:string;source:string;replied:boolean;replyAfterEmail?:number|null;words?:number|null;rating:string|null;icpId:string|null;prompt:string}
 export interface AnalysisMeta {
   id:string;start:string;end:string;createdAt:string;filters:{periodKey:string;timezone:string;icpId:string|null};status:string;summary:string
 }
