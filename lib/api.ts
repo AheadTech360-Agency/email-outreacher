@@ -1519,11 +1519,18 @@ export const fetchSmartLists = (workspaceId: string, kind: SmartListKind) =>
 
 /** One page of a list. `processed`: whether an email was written to them (for a company, anyone at it) yet;
  * `emails`: whether they have an email (for a company, anyone at it). "yes", "no" or "" for either. */
-export const fetchSmartList = (workspaceId: string, id: string, page = 1, pageSize = 50, q = "", processed = "", emails = "") =>
-  api<SmartListDetail>(
-    `/smart-lists/${id}?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(q)}&processed=${processed}&emails=${emails}`,
-    { workspaceId },
-  )
+/** The yes/no filters on list members (for a company, true of anyone at it). */
+export type MemberFacet = "processed" | "contacted" | "verified" | "emails"
+
+/** Filters together: each "yes" or "no"; one left out (or "all") isn't applied. */
+export const fetchSmartList = (workspaceId: string, id: string, page = 1, pageSize = 50, q = "", filters: Partial<Record<MemberFacet, string>> = {}) => {
+  const facets = Object.entries(filters).filter(([, v]) => v === "yes" || v === "no").map(([k, v]) => `&${k}=${v}`).join("")
+  return api<SmartListDetail>(`/smart-lists/${id}?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(q)}${facets}`, { workspaceId })
+}
+
+/** Which companies (or people) each filter holds for: written to, sent or queued, a verified email, any email. */
+export const fetchSmartListFacts = (workspaceId: string, kind: SmartListKind) =>
+  api<Record<MemberFacet, string[]>>(`/smart-lists/facts?kind=${kind}`, { workspaceId })
 
 /** Move companies or people to an existing list, or a new one by name. */
 export const moveToSmartList = (

@@ -1,6 +1,6 @@
 "use client"
 
-import { FacetFilters } from "@/components/facet-filters"
+import { FacetFilters, type FacetField } from "@/components/facet-filters"
 import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
 
 import Link from "next/link"
@@ -23,8 +23,8 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchAllStakeholders, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartListMemberships, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
-  useApi, type SmartList, type SmartListKind,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchAllStakeholders, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartListFacts, fetchSmartListMemberships, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  useApi, type MemberFacet, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
 import { formatUsd } from "@/lib/format"
@@ -325,9 +325,9 @@ function ListDetail({
   const [search, setSearch] = useState("")
   const [q, setQ] = useState("")
   const [filters, setFilters] = useState<Record<string, string>>({})
-  const processed = filters.processed && filters.processed !== "all" ? filters.processed : ""
-  const emails = filters.emails && filters.emails !== "all" ? filters.emails : ""
-  const list = useApi(() => fetchSmartList(wsId, id, page, pageSize, q, processed, emails), [wsId, id, page, pageSize, q, processed, emails])
+  const facetKey = JSON.stringify(filters)
+  const filtering = Object.values(filters).some((v) => v === "yes" || v === "no")
+  const list = useApi(() => fetchSmartList(wsId, id, page, pageSize, q, filters), [wsId, id, page, pageSize, q, facetKey])
   const [name, setName] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [target, setTarget] = useState("")
@@ -505,10 +505,7 @@ function ListDetail({
             setPage(1)
             setPicked(new Set())
           }}
-          fields={[
-            { key: "processed", label: "Written to", options: WRITTEN_OPTIONS },
-            { key: "emails", label: d.kind === "company" ? "People with emails" : "Email", options: PRESENCE_OPTIONS },
-          ]}
+          fields={memberFacetFields(d.kind)}
         />
         {d.matching > d.pageSize && (
           <div className="ml-auto flex items-center gap-2 text-sm">
@@ -626,7 +623,7 @@ function ListDetail({
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">{q || processed || emails ? "Nothing matches. Clear the search or filters to see more." : "This list is empty."}</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{q || filtering ? "Nothing matches. Clear the search or filters to see more." : "This list is empty."}</p>
         )}
       </div>
 
@@ -648,6 +645,20 @@ function ListDetail({
 const WRITTEN_OPTIONS = [
   { value: "no", label: "Not yet" },
   { value: "yes", label: "Already written to" },
+]
+
+/** Sent or queued: an email of theirs was queued or sent, or their address ever queued; the queue won't take them again. */
+const CONTACTED_OPTIONS = [
+  { value: "no", label: "Not yet" },
+  { value: "yes", label: "Sent or queued" },
+]
+
+/** The yes/no filters on companies or people, used together (for a company, true of anyone at it). */
+const memberFacetFields = (kind: SmartListKind): (FacetField & { key: MemberFacet })[] => [
+  { key: "contacted", label: "Sent or queued", options: CONTACTED_OPTIONS },
+  { key: "processed", label: "Written to", options: WRITTEN_OPTIONS },
+  { key: "verified", label: kind === "company" ? "People with verified emails" : "Verified email", options: PRESENCE_OPTIONS },
+  { key: "emails", label: kind === "company" ? "People with emails" : "Email", options: PRESENCE_OPTIONS },
 ]
 
 type Candidate = { id: string; name: string; detail: string; icpId: string | null }
@@ -690,6 +701,10 @@ function AddMembersDialog({
     [wsId, kind],
   )
   const membership = useApi(() => fetchSmartListMemberships(wsId, kind), [wsId, kind])
+  const facts = useApi(() => fetchSmartListFacts(wsId, kind), [wsId, kind])
+  const factSets = new Map(Object.entries(facts.data ?? {}).map(([key, ids]) => [key, new Set(ids)]))
+  const [facets, setFacets] = useState<Record<string, string>>({})
+  const facetsOn = Object.entries(facets).filter(([, v]) => v === "yes" || v === "no")
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const listName_ = new Map(lists.map((l) => [l.id, l.name]))
   const [search, setSearch] = useState("")
@@ -707,14 +722,15 @@ function AddMembersDialog({
     if (current === listId) return false
     if (icpFilter !== "all" && (icpFilter === "none" ? c.icpId : c.icpId !== icpFilter)) return false
     if (from !== "all" && (from === "none" ? current : current !== from)) return false
+    if (facetsOn.some(([key, v]) => (factSets.get(key)?.has(c.id) ?? false) !== (v === "yes"))) return false
     return !query || c.name.toLowerCase().includes(query) || c.detail.toLowerCase().includes(query)
   })
   const visible = matches.slice((page - 1) * pageSize, page * pageSize)
   const pageState = visible.length && visible.every((c) => picked.has(c.id)) ? true : visible.some((c) => picked.has(c.id)) ? "indeterminate" : false
   const allPicked = matches.length > 0 && matches.every((c) => picked.has(c.id))
   const moving = [...picked].filter((id) => inList(id)).length
-  const loading = !candidates.data || !membership.data
-  const error = candidates.error ?? membership.error
+  const loading = !candidates.data || !membership.data || !facts.data
+  const error = candidates.error ?? membership.error ?? facts.error
 
   const toggle = (ids: string[], on: boolean) =>
     setPicked((current) => {
@@ -796,6 +812,10 @@ function AddMembersDialog({
             </SelectContent>
           </Select>
         </div>
+        <div className="-mt-2 flex flex-wrap items-center gap-2">
+          <FacetFilters label="Filters" values={facets} onChange={(v) => (setFacets(v), setPage(1))} count={matches.length}
+            fields={memberFacetFields(kind)} />
+        </div>
 
         <div className="overflow-hidden rounded-md border">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-muted/40 px-3 py-2 text-sm">
@@ -824,7 +844,7 @@ function AddMembersDialog({
           {error ? (
             <div role="alert" className="space-y-2 p-4 text-sm">
               <p>{error}</p>
-              <Button variant="outline" size="sm" onClick={() => (candidates.reload(), membership.reload())}>
+              <Button variant="outline" size="sm" onClick={() => (candidates.reload(), membership.reload(), facts.reload())}>
                 Try again
               </Button>
             </div>
@@ -832,7 +852,7 @@ function AddMembersDialog({
             <p className="p-4 text-sm text-muted-foreground">Loading {noun.many}…</p>
           ) : !matches.length ? (
             <p className="p-4 text-sm text-muted-foreground">
-              {query || icpFilter !== "all" || from !== "all" ? `No ${noun.many} match.` : `Every ${noun.one} is already in ${listName}.`}
+              {query || icpFilter !== "all" || from !== "all" || facetsOn.length ? `No ${noun.many} match.` : `Every ${noun.one} is already in ${listName}.`}
             </p>
           ) : (
             <ul className="max-h-80 divide-y divide-rule overflow-y-auto">
