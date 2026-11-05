@@ -89,6 +89,8 @@ export async function apiAll<T>(path: string, workspaceId?: string | null, cap =
 /** A background job (backend: routers/jobs.py). Long-running work runs in Coldbrew's worker, not in a request. */
 export interface Job {
   kind: string
+  /** The page it belongs to when its kind says otherwise: a Quick Start step opens its run. */
+  link?: string | null
   createdAt: string
   startedAt: string | null
   finishedAt: string | null
@@ -1491,8 +1493,8 @@ export interface SmartList {
 }
 
 export interface SmartListDetail extends SmartList {
-  companies: { id: string; name: string; domain: string | null; city: string | null; state: string | null; source: string; status: string; reason: string }[]
-  people: { id: string; name: string; title: string; company: string | null; email: string | null; emailStatus: string | null; linkedinUrl: string | null; reason: string }[]
+  companies: { id: string; name: string; domain: string | null; city: string | null; state: string | null; source: string; status: string; reason: string; processed: boolean; peopleWithEmail: number }[]
+  people: { id: string; name: string; title: string; company: string | null; email: string | null; emailStatus: string | null; linkedinUrl: string | null; reason: string; processed: boolean }[]
   page: number
   pageSize: number
   /** Members matching the search (all of them without one). */
@@ -1515,8 +1517,13 @@ export interface SortListsResult {
 export const fetchSmartLists = (workspaceId: string, kind: SmartListKind) =>
   api<{ lists: SmartList[]; unsorted: number }>(`/smart-lists?kind=${kind}`, { workspaceId })
 
-export const fetchSmartList = (workspaceId: string, id: string, page = 1, pageSize = 50, q = "") =>
-  api<SmartListDetail>(`/smart-lists/${id}?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(q)}`, { workspaceId })
+/** One page of a list. `processed`: whether an email was written to them (for a company, anyone at it) yet;
+ * `emails`: whether they have an email (for a company, anyone at it). "yes", "no" or "" for either. */
+export const fetchSmartList = (workspaceId: string, id: string, page = 1, pageSize = 50, q = "", processed = "", emails = "") =>
+  api<SmartListDetail>(
+    `/smart-lists/${id}?page=${page}&pageSize=${pageSize}&q=${encodeURIComponent(q)}&processed=${processed}&emails=${emails}`,
+    { workspaceId },
+  )
 
 /** Move companies or people to an existing list, or a new one by name. */
 export const moveToSmartList = (

@@ -91,7 +91,7 @@ function ActivityRow({ job, onNavigate }: { job: Job; onNavigate: () => void }) 
     {active && percent === null && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="size-3 animate-spin" /> {job.status === "queued" ? "Waiting for a worker; do not submit the same job again." : "Working; this step has no total count yet."}</p>}
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
       <time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString()}</time>
-      <Link className="text-data hover:underline" href={jobDestination(job.kind)} onClick={onNavigate}>{job.status === "failed" ? "Open page to try again" : "Open related page"}</Link>
+      <Link className="text-data hover:underline" href={job.link ?? jobDestination(job.kind)} onClick={onNavigate}>{job.status === "failed" ? "Open page to try again" : "Open related page"}</Link>
     </div>
     {job.status === "failed" && <p className="text-xs text-muted-foreground">Check the error before restarting from the related page. Retrying research or generation can spend credits; this panel never retries automatically.</p>}
   </li>

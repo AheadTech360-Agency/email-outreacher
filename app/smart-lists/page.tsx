@@ -324,7 +324,10 @@ function ListDetail({
   const [pageSize, setPageSize] = useState(50)
   const [search, setSearch] = useState("")
   const [q, setQ] = useState("")
-  const list = useApi(() => fetchSmartList(wsId, id, page, pageSize, q), [wsId, id, page, pageSize, q])
+  const [filters, setFilters] = useState<Record<string, string>>({})
+  const processed = filters.processed && filters.processed !== "all" ? filters.processed : ""
+  const emails = filters.emails && filters.emails !== "all" ? filters.emails : ""
+  const list = useApi(() => fetchSmartList(wsId, id, page, pageSize, q, processed, emails), [wsId, id, page, pageSize, q, processed, emails])
   const [name, setName] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [target, setTarget] = useState("")
@@ -493,11 +496,20 @@ function ListDetail({
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        {q && (
-          <span className="text-sm tabular-nums text-muted-foreground">
-            {d.matching.toLocaleString()} {d.matching === 1 ? "match" : "matches"}
-          </span>
-        )}
+        <FacetFilters
+          label="Filters"
+          values={filters}
+          count={d.matching}
+          onChange={(v) => {
+            setFilters(v)
+            setPage(1)
+            setPicked(new Set())
+          }}
+          fields={[
+            { key: "processed", label: "Written to", options: WRITTEN_OPTIONS },
+            { key: "emails", label: d.kind === "company" ? "People with emails" : "Email", options: PRESENCE_OPTIONS },
+          ]}
+        />
         {d.matching > d.pageSize && (
           <div className="ml-auto flex items-center gap-2 text-sm">
             <span className="tabular-nums text-muted-foreground">
@@ -565,6 +577,8 @@ function ListDetail({
                 <>
                   <th className="py-2 pr-3 font-medium">Company</th>
                   <th className="py-2 pr-3 font-medium">Where</th>
+                  <th className="py-2 pr-3 font-medium">People with emails</th>
+                  <th className="py-2 pr-3 font-medium">Written to</th>
                   <th className="py-2 pr-3 font-medium">Why this list</th>
                 </>
               ) : (
@@ -572,6 +586,7 @@ function ListDetail({
                   <th className="py-2 pr-3 font-medium">Person</th>
                   <th className="py-2 pr-3 font-medium">Company</th>
                   <th className="py-2 pr-3 font-medium">Email</th>
+                  <th className="py-2 pr-3 font-medium">Written to</th>
                   <th className="py-2 pr-3 font-medium">Why this list</th>
                 </>
               )}
@@ -588,6 +603,8 @@ function ListDetail({
                   {c.domain && <div className="text-xs text-muted-foreground">{c.domain}</div>}
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">{[c.city, c.state].filter(Boolean).join(", ")}</td>
+                <td className="py-2 pr-3 tabular-nums text-muted-foreground">{c.peopleWithEmail || "None"}</td>
+                <td className="py-2 pr-3 text-muted-foreground">{c.processed ? "Yes" : "Not yet"}</td>
                 <td className="py-2 pr-3 text-muted-foreground">{c.reason}</td>
               </tr>
             ))}
@@ -602,13 +619,14 @@ function ListDetail({
                 </td>
                 <td className="py-2 pr-3 text-muted-foreground">{p.company}</td>
                 <td className="py-2 pr-3 text-muted-foreground">{p.email ?? "No email"}</td>
+                <td className="py-2 pr-3 text-muted-foreground">{p.processed ? "Yes" : "Not yet"}</td>
                 <td className="py-2 pr-3 text-muted-foreground">{p.reason}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {rows.length === 0 && (
-          <p className="py-6 text-center text-sm text-muted-foreground">{q ? "Nothing matches." : "This list is empty."}</p>
+          <p className="py-6 text-center text-sm text-muted-foreground">{q || processed || emails ? "Nothing matches. Clear the search or filters to see more." : "This list is empty."}</p>
         )}
       </div>
 
@@ -625,6 +643,12 @@ function ListDetail({
     </section>
   )
 }
+
+/** Written to: an email was already written to them (for a company, anyone at it); Quick Start skips those. */
+const WRITTEN_OPTIONS = [
+  { value: "no", label: "Not yet" },
+  { value: "yes", label: "Already written to" },
+]
 
 type Candidate = { id: string; name: string; detail: string; icpId: string | null }
 
