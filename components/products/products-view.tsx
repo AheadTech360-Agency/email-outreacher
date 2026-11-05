@@ -1,10 +1,16 @@
 "use client"
 
+import { ProductAISuggestions } from "@/components/products/product-ai-suggestions"
+import { FacetFilters } from "@/components/facet-filters"
+import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+
+import { productFieldKey, productFieldsError, PRODUCT_SUGGESTIONS } from "@/lib/product-fields"
 import Link from "next/link"
 import { useState } from "react"
 import { Package, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ArchiveFilter, ArchiveRecordsButton } from "@/components/archive-records"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
@@ -28,7 +34,7 @@ import {
 } from "@/lib/api"
 import { shortDate } from "@/lib/format"
 
-const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url">; label: string; hint: string; placeholder: string; rows: number }[] = [
+const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url" | "customFields" | "notes">; label: string; hint: string; placeholder: string; rows: number }[] = [
   {
     key: "description",
     label: "What it is",
@@ -66,7 +72,7 @@ const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url">; label: string
   },
 ]
 
-const EMPTY: ProductFields = { name: "", description: "", value: "", proof: "", offer: "", cta: "", url: "" }
+const EMPTY: ProductFields = { name: "", description: "", value: "", proof: "", offer: "", cta: "", url: "", customFields: [], notes: [] }
 
 export function ProductsView() {
   return (
@@ -87,19 +93,26 @@ function Products({ wsId }: { wsId: string }) {
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [editing, setEditing] = useState<Product | "new" | null>(null)
   const [deleting, setDeleting] = useState<Product | null>(null)
+  const [archiveFilter, setArchiveFilter] = useState("active")
+  const [extra, setExtra] = useState<Record<string,string>>({})
 
   if (products.error && !products.data) return <BackendError message={products.error} onRetry={products.reload} />
   if (!products.data) return <TableSkeleton rows={4} />
 
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const list = products.data
+  const list = products.data.filter((p) => (archiveFilter === "all" || (archiveFilter === "archived" ? p.archived : !p.archived)) &&
+    textMatches(extra.query,p.name,p.description,p.offer,p.value,p.proof,...(p.customFields ?? []).flatMap((f)=>[f.label,f.value]),...(p.notes ?? []).map((n)=>n.body)) && presenceMatches(p.icpIds.length,extra.assignment) &&
+    (!extra.icp || extra.icp === "all" || p.icpIds.includes(extra.icp)))
 
   return (
     <>
+      <ArchiveFilter value={archiveFilter} onChange={setArchiveFilter} />
+      <Input aria-label="Search products" placeholder="Search product name, offer, description or proof" value={extra.query ?? ""} onChange={(e)=>setExtra({...extra,query:e.target.value})} />
+      <FacetFilters values={extra} onChange={setExtra} count={list.length} fields={[{key:"assignment",label:"Assigned ICPs",options:PRESENCE_OPTIONS},{key:"icp",label:"Product ICP",options:(icps.data ?? []).map((i)=>({value:i.id,label:i.name}))}]} />
       {list.length === 0 ? (
         <EmptyState
           icon={Package}
-          title="No products yet"
+          title="No products in this view"
           description="Add what you sell, then pick a product on each ICP. Its details become available to that ICP's prompts."
           action={
             <ManagerOnly><Button onClick={() => setEditing("new")}>
@@ -148,6 +161,7 @@ function Products({ wsId }: { wsId: string }) {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{shortDate(p.updatedAt)}</TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
+                      <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[p.id]} restore={p.archived} onChanged={products.reload} />
                       <ManagerOnly>
                         <Button
                           variant="ghost"
@@ -223,17 +237,19 @@ function ProductSheet({
 }) {
   const [draft, setDraft] = useState<ProductFields>(() =>
     product
-      ? { name: product.name, description: product.description, value: product.value, proof: product.proof, offer: product.offer, cta: product.cta, url: product.url }
+      ? { name: product.name, description: product.description, value: product.value, proof: product.proof, offer: product.offer, cta: product.cta, url: product.url, customFields: product.customFields ?? [], notes: product.notes ?? [] }
       : EMPTY,
   )
   const [touched, setTouched] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [aiRunning, setAiRunning] = useState(false)
+  const fieldsError = productFieldsError(draft.customFields, draft.notes)
   const nameError = touched && !draft.name.trim() ? "Give the product a name" : ""
 
   const save = async () => {
     setTouched(true)
-    if (!draft.name.trim()) return
+    if (busy || aiRunning || !draft.name.trim() || fieldsError) return
     setBusy(true)
     try {
       if (product) await updateProduct(wsId, product.id, draft)
@@ -263,7 +279,7 @@ function ProductSheet({
   }
 
   return (
-    <Sheet open onOpenChange={(o) => !o && !busy && onClose()}>
+    <Sheet open onOpenChange={(o) => !o && !busy && !aiRunning && onClose()}>
       <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-lg!">
         <SheetHeader className="px-5 pt-5 pb-4">
           <SheetTitle className="text-lg">{product ? product.name : "New product"}</SheetTitle>
@@ -281,6 +297,8 @@ function ProductSheet({
             void save()
           }}
         >
+          <ProductAISuggestions workspaceId={wsId} draft={draft} disabled={busy || !!fieldsError || !draft.name.trim()} onApply={setDraft} onRunningChange={setAiRunning} />
+          <fieldset disabled={busy || aiRunning} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="product-name">Name</Label>
             <Input
@@ -320,14 +338,34 @@ function ProductSheet({
             />
             <p className="text-xs text-muted-foreground">{"{{product.url}}"}. A page about it, if emails should link to one.</p>
           </div>
+          <section className="space-y-3 border-t pt-4" aria-label="Custom product fields">
+            <h3 className="font-medium">Additional product fields</h3>
+            <p className="text-xs text-muted-foreground">Add a suggested field or create your own. Each has a stable prompt variable. Removing or renaming a key leaves its old variable empty in saved prompts.</p>
+            <div className="flex flex-wrap gap-2">{PRODUCT_SUGGESTIONS.filter((f)=>!draft.customFields.some((x)=>x.key===f.key)).map((f)=><Button type="button" key={f.key} size="sm" variant="outline" disabled={busy || draft.customFields.length>=30} onClick={()=>setDraft((d)=>({...d,customFields:[...d.customFields,{...f,value:""}]}))}><Plus />{f.label}</Button>)}</div>
+            {draft.customFields.map((field,index)=><div key={index} className="space-y-2 rounded-md border p-3">
+              <div className="flex items-end gap-2"><div className="flex-1 space-y-1"><Label htmlFor={`custom-label-${index}`}>Field name</Label><Input id={`custom-label-${index}`} maxLength={80} value={field.label} onChange={(e)=>setDraft((d)=>({...d,customFields:d.customFields.map((f,i)=>i===index?{...f,label:e.target.value,key:(!product?.customFields?.some((old)=>old.key===f.key) && (!f.key || f.key===productFieldKey(f.label)))?productFieldKey(e.target.value):f.key}:f)}))} /></div><Button type="button" variant="ghost" size="icon" aria-label={`Delete field ${field.label || index+1}`} onClick={()=>setDraft((d)=>({...d,customFields:d.customFields.filter((_,i)=>i!==index)}))}><Trash2 /></Button></div>
+              <Label htmlFor={`custom-key-${index}`}>Variable key</Label><Input id={`custom-key-${index}`} maxLength={60} value={field.key} onChange={(e)=>setDraft((d)=>({...d,customFields:d.customFields.map((f,i)=>i===index?{...f,key:e.target.value}:f)}))} />
+              <code className="block break-all text-xs text-muted-foreground">{`{{product.custom.${field.key || "field_key"}}}`}</code>
+              <Label htmlFor={`custom-value-${index}`}>Value</Label><Textarea id={`custom-value-${index}`} maxLength={4000} rows={3} value={field.value} onChange={(e)=>setDraft((d)=>({...d,customFields:d.customFields.map((f,i)=>i===index?{...f,value:e.target.value}:f)}))} />
+            </div>)}
+            <Button type="button" variant="outline" size="sm" disabled={busy || draft.customFields.length>=30} onClick={()=>setDraft((d)=>({...d,customFields:[...d.customFields,{key:"",label:"",value:""}]}))}><Plus /> Add custom field</Button>
+          </section>
+          <section className="space-y-3 border-t pt-4" aria-label="Product notes">
+            <h3 className="font-medium">Notes</h3><p className="text-xs text-muted-foreground">Product context available as {"{{product.notes}}"}. Custom fields and notes are also included in relevant prompts automatically. Changes take effect when you save.</p>
+            {draft.notes.map((note,index)=><div key={note.id} className="flex items-start gap-2"><div className="flex-1 space-y-1"><Label htmlFor={`note-${note.id}`}>Note {index+1}</Label><Textarea id={`note-${note.id}`} maxLength={2000} rows={3} value={note.body} onChange={(e)=>setDraft((d)=>({...d,notes:d.notes.map((n)=>n.id===note.id?{...n,body:e.target.value}:n)}))} /></div><Button type="button" variant="ghost" size="icon" aria-label={`Delete note ${index+1}`} onClick={()=>setDraft((d)=>({...d,notes:d.notes.filter((n)=>n.id!==note.id)}))}><Trash2 /></Button></div>)}
+            <Button type="button" variant="outline" size="sm" disabled={busy || draft.notes.length>=20} onClick={()=>setDraft((d)=>({...d,notes:[...d.notes,{id:crypto.randomUUID(),body:""}]}))}><Plus /> Add note</Button>
+          </section>
+          {fieldsError && <p role="alert" className="text-sm text-destructive">{fieldsError}</p>}
+          </fieldset>
         </form>
         <SheetFooter className="flex-row flex-wrap justify-between gap-2 border-t border-rule px-5 py-4">
+          {product && <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[product.id]} restore={product.archived}
+            disabled={busy || aiRunning} onChanged={() => { onSaved(); onClose() }} />}
           {product ? (
             <Button
               variant="ghost"
               className="text-destructive"
-              disabled={busy || icpNames.length > 0}
-              title={icpNames.length ? "An ICP sells it. Pick another product on that ICP first." : undefined}
+              disabled={busy || aiRunning}
               onClick={() => setConfirmDelete(true)}
             >
               <Trash2 /> Delete
@@ -336,10 +374,10 @@ function ProductSheet({
             <span />
           )}
           <div className="flex gap-2">
-            <Button variant="outline" onClick={onClose} disabled={busy}>
+            <Button variant="outline" onClick={onClose} disabled={busy || aiRunning}>
               Cancel
             </Button>
-            <Button type="submit" form="product-form" disabled={busy}>
+            <Button type="submit" form="product-form" disabled={busy || aiRunning || !!fieldsError}>
               {busy ? "Saving…" : product ? "Save" : "Add product"}
             </Button>
           </div>

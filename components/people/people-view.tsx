@@ -1,11 +1,17 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { choices, pickFacets, presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
 import { ChevronDown, DatabaseZap, Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ArchiveFilter, ArchiveRecordsButton } from "@/components/archive-records"
+import { ListTools, BulkSelection } from "@/components/list-tools"
+import { DeleteRecordsButton } from "@/components/delete-records-button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
 import { ReadPostsDialog } from "@/components/read-posts-dialog"
@@ -104,6 +110,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   const companies = useApi(() => fetchPipeline(wsId), [wsId])
   const posts = useApi(() => fetchPosts(wsId), [wsId])
   const [query, setQuery] = useState("")
+  const [extra, setExtra] = useState<Record<string, string>>({})
   const [foundBy, setFoundBy] = useState("all")
   const [status, setStatus] = useState("all")
   const [emailFilter, setEmailFilter] = useState("all")
@@ -118,7 +125,8 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
-  const list = people.data ?? []
+  const [archiveFilter, setArchiveFilter] = useState("active")
+  const list = (people.data ?? []).filter((row) => archiveFilter === "all" || (archiveFilter === "archived" ? row.archived : !row.archived))
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
   const companyName = new Map((companies.data ?? []).map((c) => [c.id, c.name]))
   const company = (s: Stakeholder) => (s.pipelineCompanyId && companyName.get(s.pipelineCompanyId)) || s.organizationName || "—"
@@ -128,6 +136,9 @@ function PeopleList({ wsId }: { wsId: string }) {
   const q = query.trim().toLowerCase()
   const visible = list.filter(
     (s) =>
+      presenceMatches(s.linkedinUrl, extra.linkedin) && presenceMatches(s.leadId && (postsByLead.get(s.leadId)?.length ?? 0), extra.postState) &&
+      textMatches(extra.companyText, company(s)) &&
+      (!extra.emailState || extra.emailState === "all" || (s.emailStatus || "unknown") === extra.emailState) &&
       (foundBy === "all" ||
         (foundBy === "company"
           ? s.source === "apollo" && !s.icpId
@@ -145,7 +156,7 @@ function PeopleList({ wsId }: { wsId: string }) {
               ? !!s.revealedAt
               : !s.revealedAt)) &&
       (emailFilter === "all" ||
-        (emailFilter === "none" ? !s.email : emailFilter === "verified" ? isVerified(s) : !!s.email)) &&
+        (emailFilter === "none" ? !s.email?.trim() : emailFilter === "verified" ? isVerified(s) : !!s.email?.trim())) &&
       (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
   )
   // One page of the filtered people; a filter that shrinks the list past this page shows its last page.
@@ -159,8 +170,6 @@ function PeopleList({ wsId }: { wsId: string }) {
   // Who an email can be written for: anyone with an address.
   const writable = picked.filter((s) => s.email)
   const allChecked = shown.length > 0 && shown.every((s) => selected.has(s.id))
-  const allShownPicked = visible.length > 0 && visible.every((s) => selected.has(s.id))
-  const filtering = !!q || foundBy !== "all" || status !== "all" || emailFilter !== "all"
 
   const actions = [
     { key: "write", label: `Write emails for ${writable.length}`, doing: "Writing…", busy: "write", icon: Sparkles,
@@ -331,15 +340,6 @@ function PeopleList({ wsId }: { wsId: string }) {
             <SelectItem value="none">No email</SelectItem>
           </SelectContent>
         </Select>
-        {visible.length > 0 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => setSelected(allShownPicked ? new Set() : new Set(visible.map((s) => s.id)))}
-          >
-            {allShownPicked ? "Clear selection" : `Select all ${visible.length.toLocaleString()}${filtering ? " matching" : ""}`}
-          </Button>
-        )}
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           <Button
             size="sm"
@@ -367,9 +367,31 @@ function PeopleList({ wsId }: { wsId: string }) {
         </div>
       </div>
 
+      {/* One row: more filters and which records, then saved views. The fields open under it. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},{key:"postState",label:"Fetched personal posts",options:PRESENCE_OPTIONS},{key:"emailState",label:"Email verification status",options:choices(list.map((p)=>p.emailStatus || "unknown"))},{key:"companyText",label:"Employer",type:"text",placeholder:"Search company name"}]} />
+        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Set()); setPage(1) }} />
+        <div className="ml-auto">
+          <ListTools wsId={wsId} scope="people" filters={{ query, foundBy, status, emailFilter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["linkedin","postState","emailState","companyText"])); setQuery(v.query ?? ""); setFoundBy(v.foundBy ?? "all"); setStatus(["all", "hidden", "revealed", "lead", "notlead"].includes(v.status) ? v.status : "all"); setEmailFilter(["all", "none", "has", "verified"].includes(v.emailFilter) ? v.emailFilter : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Set()); setPage(1) }} onRefresh={() => { people.reload(); posts.reload() }} />
+        </div>
+      </div>
+      {emailFilter === "none" && visible.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-md border p-3">
+          <span className="text-sm">{visible.length} matching people without email addresses</span>
+          <DeleteRecordsButton workspaceId={wsId} kind="person" ids={visible.map((row) => row.id)}
+            noEmailOnly label={`Delete all ${visible.length} without email`} disabled={!!busy || visible.length > 5000}
+            onDeleted={() => { setSelected(new Set()); setPage(1); people.reload(); posts.reload(); reloadLeads() }} />
+          {visible.length > 5000 && <p className="text-xs text-muted-foreground">Narrow the filters to 5,000 people or fewer.</p>}
+        </div>
+      )}
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
+          <BulkSelection matchingIds={visible.map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={selected} onChange={setSelected} disabled={!!busy} />
+          <ArchiveRecordsButton workspaceId={wsId} kind="person" ids={picked.map((row) => row.id)} restore={archiveFilter === "archived"} disabled={!!busy}
+            onChanged={() => { setSelected(new Set()); people.reload() }} />
+          <DeleteRecordsButton workspaceId={wsId} kind="person" ids={picked.map((row) => row.id)} disabled={!!busy}
+            onDeleted={() => { setSelected(new Set()); setPage(1); people.reload(); posts.reload(); reloadLeads() }} />
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
           </Button>

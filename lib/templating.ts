@@ -103,6 +103,9 @@ const PRODUCT_VARS = [
   "product.offer",
   "product.cta",
   "product.url",
+  "product.notes",
+  "product.details",
+  "product.custom.<field>",
 ]
 
 /** Company Verification prompts are filled by the backend from a researched company. */
@@ -123,6 +126,8 @@ const SORT_VARS = ["sort.icps", "sort.lists", "sort.items"]
 
 /** Variables offered in the editor sidebar for each prompt kind. `lead.extra.*` is matched by prefix. */
 export function availableVariables(kind: PromptKind): string[] {
+  if (kind === "analysis") return ["analysis.data"]
+  if (kind === "product") return ["product.data", ...PRODUCT_VARS]
   if (kind === "verify") return VERIFY_VARS
   if (kind === "sort") return SORT_VARS
   if (kind === "sort_people") return ["sort.lists", "sort.items"]
@@ -135,7 +140,8 @@ export function availableVariables(kind: PromptKind): string[] {
 }
 
 export function isKnownVariable(name: string, kind: PromptKind): boolean {
-  if (kind !== "verify" && !kind.startsWith("followup") && name.startsWith("lead.extra.") && name.length > "lead.extra.".length) return true
+  if (kind !== "analysis" && kind !== "sort" && kind !== "sort_people" && /^product\.custom\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(name)) return true
+  if (kind !== "analysis" && kind !== "product" && kind !== "sort" && kind !== "sort_people" && kind !== "verify" && !kind.startsWith("followup") && name.startsWith("lead.extra.") && name.length > "lead.extra.".length) return true
   return availableVariables(kind).includes(name) || (ALIASES[kind] ?? []).includes(name)
 }
 

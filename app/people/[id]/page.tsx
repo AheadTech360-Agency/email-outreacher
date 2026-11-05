@@ -1,14 +1,17 @@
 "use client"
 
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
 import { ArrowRight, DatabaseZap, ExternalLink, Newspaper } from "lucide-react"
+import { ArchiveRecordsButton } from "@/components/archive-records"
+import { DeleteRecordsButton } from "@/components/delete-records-button"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { EnrichDialog } from "@/components/enrich-dialog"
 import { ReadPostsDialog } from "@/components/read-posts-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { StatusPill } from "@/components/companies/pipeline-cells"
+import { PersonTimeline } from "@/components/people/person-timeline"
 import { Avatar, Block, DataGroup, Fact, Panel, RecordHeader } from "@/components/record-header"
 import { Pill, type PillTone } from "@/components/status"
 import { Button } from "@/components/ui/button"
@@ -40,6 +43,7 @@ export default function PersonPage() {
 }
 
 function Person({ wsId, id }: { wsId: string; id: string }) {
+  const router = useRouter()
   const person = useApi(() => fetchStakeholder(wsId, id), [wsId, id])
   const [fillingIn, setFillingIn] = useState(false)
   const [readingPosts, setReadingPosts] = useState(false)
@@ -95,6 +99,9 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
         ]}
         actions={
           <>
+            <ArchiveRecordsButton workspaceId={wsId} kind="person" ids={[id]} restore={p.archived} onChanged={person.reload} />
+            <DeleteRecordsButton workspaceId={wsId} kind="person" ids={[id]}
+              onDeleted={() => router.push("/people")} />
             <ManagerOnly>
               <Button variant="outline" onClick={() => setReadingPosts(true)}>
                 <Newspaper /> Read posts
@@ -136,10 +143,12 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
       <Tabs defaultValue="overview" className="px-4 pb-10 md:px-8">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="timeline">Timeline</TabsTrigger>
           <TabsTrigger value="emails">Emails ({theirEmails.length})</TabsTrigger>
           <TabsTrigger value="posts">Posts ({posts.length})</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="timeline" className="pt-5"><PersonTimeline wsId={wsId} personId={id} /></TabsContent>
         <TabsContent value="overview" className="pt-5">
           <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="divide-y [&>*]:py-6 [&>*:first-child]:pt-0">
@@ -230,7 +239,7 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
                       {e.score !== null && <span>Score {e.score}</span>}
                       <span>{shortDate(e.createdAt)}</span>
                       {(e.status === "draft" || e.status === "edited") && (
-                        <Link href="/review" className="underline">
+                        <Link href={`/review?email=${encodeURIComponent(e.id)}`} className="underline">
                           Review it
                         </Link>
                       )}

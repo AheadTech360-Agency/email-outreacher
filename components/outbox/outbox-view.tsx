@@ -1,5 +1,9 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { choices, presenceMatches, recentMatches, PRESENCE_OPTIONS, RECENT_OPTIONS } from "@/lib/facets"
+import { ListTools } from "@/components/list-tools"
+
 import Link from "next/link"
 import { useState } from "react"
 import { Check, Circle, Minus, RotateCw, Search, Send } from "lucide-react"
@@ -44,6 +48,7 @@ export function OutboxView() {
 function Outbox({ wsId }: { wsId: string }) {
   const rows = useApi(() => fetchOutbox(wsId), [wsId])
   const [filter, setFilter] = useState("all")
+  const [extra, setExtra] = useState<Record<string, string>>({})
   const [query, setQuery] = useState("")
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -55,7 +60,12 @@ function Outbox({ wsId }: { wsId: string }) {
   const visible = all.filter(
     (r) =>
       FILTERS.find((f) => f.value === filter)!.test(r.state) &&
-      (!q || `${r.name} ${r.email} ${r.company} ${r.mailbox ?? ""}`.toLowerCase().includes(q)),
+      (!extra.campaign || extra.campaign === "all" || r.campaign === extra.campaign) &&
+      (!extra.mailbox || extra.mailbox === "all" || r.mailbox === extra.mailbox) && presenceMatches(r.mailbox, extra.assigned) &&
+      recentMatches(r.lastSentAt, extra.sentDate) &&
+      (!extra.progress || extra.progress === "all" || (extra.progress === "none" ? r.sent === 0 : extra.progress === "started" ? r.sent > 0 && r.sent < r.steps.length : r.steps.length > 0 && r.sent >= r.steps.length)) &&
+      presenceMatches(r.steps.slice(1).some((step) => step.personalized), extra.personalized) &&
+      (!q || `${r.name} ${r.email} ${r.company} ${r.campaign} ${r.mailbox ?? ""}`.toLowerCase().includes(q)),
   )
   const open = all.find((r) => r.emailId === openId) ?? null
   const synced = all.map((r) => r.syncedAt).filter(Boolean).sort().at(-1)
@@ -76,6 +86,8 @@ function Outbox({ wsId }: { wsId: string }) {
 
   return (
     <div className="space-y-4">
+      <ListTools wsId={wsId} scope="outbox" filters={{query, filter, ...extra}} onApply={(v) => {setQuery(v.query ?? "");setFilter(FILTERS.some((f)=>f.value===v.filter)?v.filter:"all");setExtra(Object.fromEntries(["campaign","mailbox","assigned","sentDate","progress","personalized"].filter((key)=>v[key]).map((key)=>[key,v[key]])))}} onRefresh={rows.reload} />
+      <FacetFilters values={extra} onChange={setExtra} count={visible.length} fields={[{key:"campaign",label:"Campaign",options:choices(all.map((r)=>r.campaign))},{key:"mailbox",label:"Sending mailbox",options:choices(all.map((r)=>r.mailbox))},{key:"assigned",label:"Mailbox assignment",options:PRESENCE_OPTIONS},{key:"progress",label:"Sequence progress",options:[{value:"none",label:"Nothing sent yet"},{value:"started",label:"Partly sent"},{value:"completed",label:"All steps sent"}]},{key:"personalized",label:"Personalized follow-ups",options:PRESENCE_OPTIONS},{key:"sentDate",label:"Last sent date",options:RECENT_OPTIONS}]} />
       <div className="flex flex-wrap items-center gap-1.5">
         <div role="tablist" aria-label="Filter the outbox" className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (

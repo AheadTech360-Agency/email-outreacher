@@ -1,10 +1,18 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { pickFacets, presenceMatches, recentMatches, scoreMatches, PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+
 import Link from "next/link"
-import { useState } from "react"
-import { Check, ExternalLink, Inbox, RotateCcw, Save, Send, Sparkles, X } from "lucide-react"
+import { Suspense, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { ArrowLeft, ArrowRight, Check, ExternalLink, Inbox, RotateCcw, Save, Send, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ListTools } from "@/components/list-tools"
+import { Pager } from "@/components/pager"
+import { reviewOrderAfterChange, reviewShortcut } from "@/lib/review-shortcuts"
+import { DeleteRecordsButton } from "@/components/delete-records-button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { FeedbackControl } from "@/components/feedback/feedback-control"
@@ -20,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { type EmailDraft, type EmailStatus, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
 import { confirmKind, confirmNote, needsConfirm } from "@/lib/email-status"
 import { formatUsd, shortDate } from "@/lib/format"
+import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 const FILTERS: { value: string; label: string; test: (s: EmailStatus) => boolean }[] = [
@@ -68,13 +77,36 @@ async function queue(wsId: string, ids: string[], riskyOk: string[] = []) {
 
 /** Real drafted emails: what Claude wrote, why, and the review actions. Nothing here sends email. */
 export function DraftsView({ icpId }: { icpId?: string }) {
-  return <WorkspaceGate>{(wsId) => <Drafts key={wsId} wsId={wsId} icpId={icpId} />}</WorkspaceGate>
+  return <Suspense fallback={<TableSkeleton rows={6} />}><DraftsWorkspace icpId={icpId} /></Suspense>
 }
 
-function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
+function DraftsWorkspace({ icpId }: { icpId?: string }) {
+  const params = useSearchParams()
+  const pathname = usePathname()
+  const router = useRouter()
+  const emailId = params.get("email")
+  const clearEmailLink = () => {
+    if (!emailId) return
+    const next = new URLSearchParams(params.toString())
+    next.delete("email")
+    router.replace(`${pathname}${next.size ? `?${next}` : ""}`, { scroll: false })
+  }
+  return <WorkspaceGate>{(wsId) => <Drafts key={`${wsId}-${icpId ?? "all"}-${emailId ?? ""}`} wsId={wsId}
+    icpId={icpId} initialEmailId={emailId} onClearEmailLink={clearEmailLink} />}</WorkspaceGate>
+}
+
+function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
+  wsId: string; icpId?: string; initialEmailId: string | null; onClearEmailLink: () => void
+}) {
   const emails = useApi(() => fetchEmails(wsId), [wsId])
+  const { icps } = useStore()
   const [filter, setFilter] = useState("review")
-  const [openId, setOpenId] = useState<string | null>(null)
+  const [search, setSearch] = useState("")
+  const [extra, setExtra] = useState<Record<string, string>>({})
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
+  const [order, setOrder] = useState<string[]>([])
+  const [openId, setOpenId] = useState<string | null>(initialEmailId)
   const [confirming, setConfirming] = useState(false)
   const [queueing, setQueueing] = useState(false)
   // Risky addresses are queued only when ticked in the confirm dialog: each batch of them is its own decision.
@@ -84,7 +116,19 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
   if (!emails.data) return <TableSkeleton rows={6} />
 
   const list = emails.data.filter((d) => !icpId || d.lead.icpId === icpId)
-  const visible = list.filter((d) => FILTERS.find((f) => f.value === filter)!.test(d.status))
+  const query = search.trim().toLowerCase()
+  const matching = list.filter((d) =>
+    (!extra.icp || extra.icp === "all" || (d.lead.icpId || "none") === extra.icp) &&
+    scoreMatches(d.score, extra.scoreBand) && presenceMatches(d.hook, extra.hookState) && presenceMatches(d.flags.length, extra.flags) &&
+    (!extra.rating || extra.rating === "all" || (d.feedback?.rating || "unrated") === extra.rating) &&
+    recentMatches(d.createdAt, extra.written) && [name(d), d.lead.company, d.lead.title, d.lead.email, d.subject, d.body]
+    .some((value) => value?.toLowerCase().includes(query)))
+  const visible = matching.filter((d) => FILTERS.find((f) => f.value === filter)!.test(d.status))
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(visible.length / pageSize)))
+  const shown = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const navigation = (order.length ? order : list.map((d) => d.id)).filter((id) => list.some((d) => d.id === id))
+  const currentIndex = navigation.indexOf(openId ?? "")
+  const openEmail = (id: string) => { setOrder(visible.map((d) => d.id)); setOpenId(id) }
   const open = list.find((d) => d.id === openId) ?? null
   const approved = list.filter((d) => d.status === "approved")
   const risky = approved.filter(isRisky)
@@ -113,6 +157,11 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
 
   return (
     <div className="space-y-4">
+      <ListTools wsId={wsId} scope={`review-${icpId ?? "all"}`} filters={{ search, filter, ...extra }}
+        onApply={(v) => { setExtra(pickFacets(v, ["icp","scoreBand","hookState","flags","rating","written"])); setSearch(v.search ?? ""); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "review"); setPage(1) }} onRefresh={emails.reload} />
+      <Input aria-label="Search review emails" placeholder="Search person, company, address, subject or email text"
+        className="max-w-lg" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+      <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"icp",label:"ICP",options:[{value:"none",label:"No ICP"},...icps.map((i)=>({value:i.id,label:i.name}))]},{key:"scoreBand",label:"Email score",options:SCORE_OPTIONS},{key:"hookState",label:"Post hook",options:PRESENCE_OPTIONS},{key:"flags",label:"Flags needing attention",options:PRESENCE_OPTIONS},{key:"rating",label:"Feedback rating",options:[{value:"good",label:"Good"},{value:"bad",label:"Needs work"},{value:"unrated",label:"Not rated"}]},{key:"written",label:"Written date",options:RECENT_OPTIONS}]} />
       <div className="flex flex-wrap items-center gap-1.5">
         <div role="tablist" aria-label="Filter drafts" className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
@@ -121,19 +170,19 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
               type="button"
               role="tab"
               aria-selected={filter === f.value}
-              onClick={() => setFilter(f.value)}
+              onClick={() => { setFilter(f.value); setPage(1) }}
               className={cn(
                 "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
                 filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
             >
-              {f.label} <span className="tabular-nums opacity-70">{list.filter((d) => f.test(d.status)).length}</span>
+              {f.label} <span className="tabular-nums opacity-70">{matching.filter((d) => f.test(d.status)).length}</span>
             </button>
           ))}
         </div>
         {approved.length > 0 && (
           <Button size="sm" className="ml-auto" disabled={queueing} onClick={() => setConfirming(true)}>
-            <Send /> Queue {approved.length} for sending
+            <Send /> Queue all {approved.length} approved
           </Button>
         )}
       </div>
@@ -141,7 +190,7 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Queue ${toQueue} approved email${toQueue === 1 ? "" : "s"}?`}
-        description="Each lead goes into their ICP's campaign in CheapSequencer, with generic follow-ups that Coldbrew personalizes just before they're due. Nothing sends until you activate the campaign in CheapSequencer. Queued emails can't be edited here."
+        description="This queues all approved emails in the current ICP or workspace, including those outside your search. Each lead goes into their ICP's campaign in CheapSequencer, with generic follow-ups that Coldbrew personalizes just before they're due. Nothing sends until you activate the campaign there. Queued emails can't be edited here."
         confirmLabel="Queue them"
         onConfirm={() => {
           setConfirming(false)
@@ -168,7 +217,7 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
       </ConfirmDialog>
 
       {visible.length === 0 ? (
-        <EmptyState icon={Inbox} title="Nothing here" description="Try another filter." />
+        <EmptyState icon={Inbox} title="Nothing here" description="Try another search or filter." />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
           <Table>
@@ -183,8 +232,8 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visible.map((d) => (
-                <TableRow key={d.id} className="cursor-pointer" onClick={() => setOpenId(d.id)}>
+              {shown.map((d) => (
+                <TableRow key={d.id} className="cursor-pointer" onClick={() => openEmail(d.id)}>
                   <TableCell className="max-w-56">
                     <p className="truncate font-medium">{name(d)}</p>
                     <p className="truncate text-[13px] text-muted-foreground">
@@ -212,14 +261,20 @@ function Drafts({ wsId, icpId }: { wsId: string; icpId?: string }) {
         </div>
       )}
 
+      {visible.length > 0 && <Pager page={currentPage} pageSize={pageSize} total={visible.length} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1) }} />}
       {open && (
         <DraftSheet
           key={open.id + open.updatedAt}
           wsId={wsId}
           draft={open}
-          onClose={() => setOpenId(null)}
+          position={currentIndex + 1} total={navigation.length} previousId={navigation[currentIndex - 1]} nextId={navigation[currentIndex + 1]}
+          onNavigate={setOpenId}
+          onClose={() => { setOpenId(null); onClearEmailLink() }}
           onChanged={(next) => {
-            if (next) setOpenId(next)
+            if (next) {
+              setOrder((current) => reviewOrderAfterChange(current, openId, next))
+              setOpenId(next)
+            }
             emails.reload()
           }}
         />
@@ -233,7 +288,9 @@ function DraftSheet({
   draft,
   onClose,
   onChanged,
+  previousId, nextId, onNavigate, position, total,
 }: {
+  previousId?: string; nextId?: string; onNavigate: (id: string) => void; position: number; total: number
   wsId: string
   draft: EmailDraft
   onClose: () => void
@@ -245,18 +302,22 @@ function DraftSheet({
   const [instruction, setInstruction] = useState("")
   const [busy, setBusy] = useState("")
   const [confirmRisky, setConfirmRisky] = useState(false)
+  const [feedbackDirty, setFeedbackDirty] = useState(false)
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null)
   const dirty = subject.trim() !== draft.subject || body.trim() !== draft.body
   // Once queued, the text is in CheapSequencer, so it's no longer edited here.
   const sent = draft.status === "sent" || draft.status === "queued"
 
-  const save = async (status?: "draft" | "approved" | "skipped") => {
+  const save = async (status?: "draft" | "approved" | "skipped", advance = false) => {
+    if (advance && feedbackDirty) { toast.error("Save your feedback before moving to the next email"); return }
     setBusy(status ?? "save")
     try {
       await updateEmail(wsId, draft.id, { ...(dirty ? { subject: subject.trim(), body: body.trim() } : {}), ...(status ? { status } : {}) })
       toast.success(
         status === "approved" ? "Approved" : status === "skipped" ? "Skipped" : status === "draft" ? "Back to review" : "Saved your edits",
       )
-      onChanged()
+      onChanged(advance ? nextId : undefined)
+      if (advance && !nextId) onClose()
     } catch (e) {
       toast.error("Couldn't save it", { description: errorText(e) })
     } finally {
@@ -280,9 +341,32 @@ function DraftSheet({
     }
   }
 
+  const navigate = (id: string) => {
+    if (busy) return
+    if (dirty || feedbackDirty) { setPendingNavigation(id); return }
+    if (id === "__close__") onClose()
+    else onNavigate(id)
+  }
   return (
-    <Sheet open onOpenChange={(o) => !o && !busy && onClose()}>
-      <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-xl!">
+    <Sheet open onOpenChange={(o) => !o && navigate("__close__")}>
+      <SheetContent onKeyDown={(e) => {
+        if (e.defaultPrevented || e.altKey || busy || pendingNavigation) return
+        const target = e.target as HTMLElement
+        const editing = !!target.closest("input, textarea, select, [contenteditable=true], [role=combobox]")
+        const action = reviewShortcut(e.key, e.ctrlKey || e.metaKey, editing)
+        if (action === "approve" && editing && !["draft-subject", "draft-body"].includes(target.id)) return
+        if (action === "approve" && !sent && subject.trim() && body.trim()) { e.preventDefault(); void save("approved", true) }
+        if (action === "next" && nextId) { e.preventDefault(); navigate(nextId) }
+        if (action === "previous" && previousId) { e.preventDefault(); navigate(previousId) }
+      }} className="w-full! gap-0 overflow-y-auto sm:max-w-xl!">
+        <ConfirmDialog open={!!pendingNavigation} onOpenChange={(value) => !value && setPendingNavigation(null)}
+          title="Discard unsaved edits?" description="Your email edits or feedback have not been saved. Save them first or discard them to continue."
+          confirmLabel="Discard edits" destructive onConfirm={() => { const target = pendingNavigation; setPendingNavigation(null); if (target === "__close__") onClose(); else if (target) onNavigate(target) }} />
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b px-5 py-3 pr-12">
+          <div><p className="text-sm font-medium">{position} of {total} emails</p><p className="text-xs text-muted-foreground">J / K: next / previous. Ctrl+Enter: approve and next. Typing is protected.</p></div>
+          <div className="flex gap-1"><Button size="icon-sm" variant="outline" aria-label="Previous review email" disabled={!previousId || !!busy} onClick={() => previousId && navigate(previousId)}><ArrowLeft /></Button>
+            <Button size="icon-sm" variant="outline" aria-label="Next review email" disabled={!nextId || !!busy} onClick={() => nextId && navigate(nextId)}><ArrowRight /></Button></div>
+        </div>
         <SheetHeader className="px-5 pt-5 pb-4">
           <SheetTitle className="text-lg">{name(draft)}</SheetTitle>
           <SheetDescription>
@@ -316,6 +400,7 @@ function DraftSheet({
                   <Save /> Save edits
                 </Button>
               )}
+              {draft.status !== "approved" && <Button size="sm" variant="outline" disabled={!!busy || !subject.trim() || !body.trim()} onClick={() => void save("approved", true)}><Check /> Approve and next</Button>}
               {draft.status !== "approved" && (
                 <Button size="sm" disabled={!!busy || !subject.trim() || !body.trim()} onClick={() => void save("approved")}>
                   <Check /> {dirty ? "Save and approve" : "Approve"}
@@ -364,7 +449,7 @@ function DraftSheet({
           <p className="text-xs text-muted-foreground">
             {draft.status === "queued"
               ? "Queued in its ICP's CheapSequencer campaign. Follow-ups are written just before they're due, only if there's no reply."
-              : "Approving marks it ready. Queueing puts it in CheapSequencer, which only sends once the campaign is activated there."}
+              : "Approving marks it ready. Queueing puts it in CheapSequencer; nothing sends until you activate the campaign there."}
           </p>
         </section>
 
@@ -420,12 +505,14 @@ function DraftSheet({
         </section>
 
         <section className="space-y-2 border-t border-rule px-5 py-4">
+          <DeleteRecordsButton workspaceId={wsId} kind="email" ids={[draft.id]} disabled={!!busy}
+            onDeleted={() => { onChanged(); onClose() }} />
           <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Rate it</h3>
           <p className="text-xs text-muted-foreground">
             Good and bad emails are shown to Claude as examples for this ICP next time.
             {draft.examplesUsed ? ` This one was written with ${draft.examplesUsed} rated examples.` : ""}
           </p>
-          <FeedbackControl key={draft.feedback?.updatedAt ?? "unrated"} workspaceId={wsId} draft={draft} onSaved={() => onChanged()} />
+          <FeedbackControl key={draft.feedback?.updatedAt ?? "unrated"} workspaceId={wsId} draft={draft} onDirtyChange={setFeedbackDirty} onSaved={() => onChanged()} />
         </section>
 
         {!sent && (

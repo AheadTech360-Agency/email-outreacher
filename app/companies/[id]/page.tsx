@@ -4,6 +4,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
 import { Ban, Check, DatabaseZap, ExternalLink, Newspaper, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
+import { ArchiveRecordsButton } from "@/components/archive-records"
+import { DeleteRecordsButton } from "@/components/delete-records-button"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
@@ -140,6 +142,9 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
         ]}
         actions={
           <>
+            <ArchiveRecordsButton workspaceId={wsId} kind="company" ids={[id]} restore={c.archived} onChanged={company.reload} />
+            <DeleteRecordsButton workspaceId={wsId} kind="company" ids={[id]}
+              onDeleted={() => router.push("/companies")} />
             {canVerify && (
               <ManagerOnly>
                 <Button variant="outline" disabled={!!busy} onClick={reread} title="Socials, emails, phone and pages. No AI, nothing paid.">

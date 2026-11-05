@@ -1,5 +1,8 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+
 import { useRef, useState } from "react"
 import { Mail, Plus, Trash2 } from "lucide-react"
 import { toast } from "sonner"
@@ -51,16 +54,21 @@ function Examples({ wsId }: { wsId: string }) {
   const examples = useApi(() => fetchExamples(wsId), [wsId])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [icpFilter, setIcpFilter] = useState("all")
+  const [extra, setExtra] = useState<Record<string,string>>({})
   const [editing, setEditing] = useState<ExampleEmail | "new" | null>(null)
 
   if (examples.error && !examples.data) return <BackendError message={examples.error} onRetry={examples.reload} />
   if (!examples.data) return <TableSkeleton rows={4} />
 
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const visible = examples.data.filter((e) => icpFilter === "all" || e.allIcps || e.icpIds.includes(icpFilter))
+  const visible = examples.data.filter((e) => (icpFilter === "all" || e.allIcps || e.icpIds.includes(icpFilter)) &&
+    textMatches(extra.query,e.subject,e.body,e.note) && presenceMatches(e.note,extra.notes) &&
+    (!extra.scope || extra.scope === "all" || (extra.scope === "global" ? e.allIcps : extra.scope === "specific" ? !e.allIcps && e.icpIds.length > 0 : !e.allIcps && !e.icpIds.length)))
 
   return (
     <>
+      <Input aria-label="Search example emails" placeholder="Search subject, copy or notes" value={extra.query ?? ""} onChange={(e)=>setExtra({...extra,query:e.target.value})} />
+      <FacetFilters values={extra} onChange={setExtra} count={visible.length} fields={[{key:"scope",label:"Example scope",options:[{value:"global",label:"All ICPs"},{value:"specific",label:"Selected ICPs"},{value:"unassigned",label:"Not assigned"}]},{key:"notes",label:"Explanation notes",options:PRESENCE_OPTIONS}]} />
       {examples.data.length === 0 ? (
         <EmptyState
           icon={Mail}

@@ -399,7 +399,7 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
                     <p className="whitespace-pre-wrap rounded-md bg-muted/40 p-3 text-sm">{d.body}</p>
                     <p className="text-xs">
                       To edit, rate or rewrite it,{" "}
-                      <Link href={`/icps/${run.icpId}/review`} className="underline">
+                      <Link href={`/icps/${run.icpId}/review?email=${encodeURIComponent(d.id)}`} className="underline">
                         open it in Review
                       </Link>
                       .

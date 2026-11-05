@@ -39,13 +39,16 @@ export function ReadPostsDialog({
   const [chosen, setChosen] = useState<Set<PostSource>>(new Set(offered.map((s) => s.key)))
   const [maxPosts, setMaxPosts] = useState("3")
   const [days, setDays] = useState("60")
+  const [instagramDays, setInstagramDays] = useState("60")
   const [running, setRunning] = useState(false)
   const [job, setJob] = useState<Job | null>(null)
   const [done, setDone] = useState(0)
 
   const n = Number(maxPosts)
   const d = Number(days)
-  const bad = !(Number.isInteger(n) && n >= 1 && n <= 20) || !(Number.isInteger(d) && d >= 1 && d <= 365)
+  const igDays = Number(instagramDays)
+  const instagramOn = chosen.has("company_instagram")
+  const bad = !(Number.isInteger(n) && n >= 1 && n <= 20) || !(Number.isInteger(d) && d >= 1 && d <= 365) || (instagramOn && !(Number.isInteger(igDays) && igDays >= 1 && igDays <= 365))
   const count = personIds.length + companyIds.length
   const sources = offered.filter((s) => chosen.has(s.key))
   const ceiling = count * ((n || 0) + Math.min(2, n || 0)) * sources.reduce((sum, s) => sum + s.cost, 0) + count * JUDGE * sources.length
@@ -67,7 +70,7 @@ export function ReadPostsDialog({
       for (let i = 0; i < companyIds.length; i += BATCH) groups.push({ companyIds: companyIds.slice(i, i + BATCH) })
       for (const [i, group] of groups.entries()) {
         setDone(i * BATCH)
-        const r = await gatherPosts(wsId, { ...group, sources: sources.map((s) => s.key), maxPosts: n, maxAgeDays: d }, setJob)
+        const r = await gatherPosts(wsId, { ...group, sources: sources.map((s) => s.key), maxPosts: n, maxAgeDays: d, ...(instagramOn ? { instagramMaxAgeDays: igDays } : {}) }, setJob)
         all.push(...r.results)
         cost += r.costUsd + r.claudeCostUsd
         if (r.error) {
@@ -131,10 +134,16 @@ export function ReadPostsDialog({
                 <Input id="read-max" type="number" inputMode="numeric" value={maxPosts} onChange={(e) => setMaxPosts(e.target.value)} />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="read-days">From the last (days)</Label>
+                <Label htmlFor="read-days">LinkedIn / default last days</Label>
                 <Input id="read-days" type="number" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value)} />
               </div>
             </div>
+            {instagramOn && <div className="space-y-1.5">
+              <Label htmlFor="read-instagram-days">Instagram: from the last (days)</Label>
+              <Input id="read-instagram-days" type="number" inputMode="numeric" min={1} max={365}
+                value={instagramDays} onChange={(e) => setInstagramDays(e.target.value)} />
+              <p className="text-xs text-muted-foreground">Only dated Instagram posts in this window count toward this read, including saved posts.</p>
+            </div>}
             <p className={bad ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
               {bad
                 ? "Posts: 1 to 20. Days: 1 to 365."

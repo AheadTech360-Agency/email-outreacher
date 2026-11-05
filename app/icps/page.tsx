@@ -1,6 +1,12 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+import { Input } from "@/components/ui/input"
+
 import Link from "next/link"
+import { useState } from "react"
+import { ArchiveFilter } from "@/components/archive-records"
 import { ArrowRight, Plus, Target } from "lucide-react"
 import { BackendError } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
@@ -21,10 +27,13 @@ export default function IcpsPage() {
   const loading = icpsStatus === "loading" || workspacesStatus === "loading"
   const emails = useApi(() => (currentWorkspaceId ? fetchEmails(currentWorkspaceId) : Promise.resolve([])), [currentWorkspaceId])
 
-  const rows = icps.map((icp) => {
+  const [archiveFilter, setArchiveFilter] = useState("active")
+  const [extra, setExtra] = useState<Record<string,string>>({})
+  const rows = icps.filter((icp) => archiveFilter === "all" || (archiveFilter === "archived" ? !icp.enabled : icp.enabled)).map((icp) => {
     const icpLeads = leads.filter((l) => l.icpId === icp.id)
     return { icp, leads: icpLeads, counts: pipeline(icpLeads) }
-  })
+  }).filter(({icp,leads:icpLeads,counts}) => textMatches(extra.query,icp.name,icp.industry) &&
+    presenceMatches(icpLeads.length,extra.leads) && presenceMatches(counts.review,extra.review))
   const toReview = rows.reduce((sum, r) => sum + r.counts.review, 0)
   const waiting = rows.filter((r) => r.counts.review > 0).length
   const notEnriched = rows.reduce((sum, r) => sum + r.counts.pending, 0)
@@ -66,6 +75,9 @@ export default function IcpsPage() {
         actions={newButton}
       />
       <div className="px-4 pb-8 md:px-8">
+        <div className="mb-4"><ArchiveFilter value={archiveFilter} onChange={setArchiveFilter} /></div>
+        <div className="mb-4 space-y-3"><Input aria-label="Search ICPs" placeholder="Search ICP name or industry" value={extra.query ?? ""} onChange={(e)=>setExtra({...extra,query:e.target.value})} />
+          <FacetFilters values={extra} onChange={setExtra} count={rows.length} fields={[{key:"leads",label:"Leads in pipeline",options:PRESENCE_OPTIONS},{key:"review",label:"Emails awaiting review",options:PRESENCE_OPTIONS}]} /></div>
         {icpsStatus === "error" ? (
           <BackendError message={icpsError ?? ""} onRetry={reloadIcps} />
         ) : loading ? (
@@ -162,7 +174,7 @@ export default function IcpsPage() {
                   {attention.slice(0, 3).map(({ email, icpName }) => (
                     <li key={email.id}>
                       <Link
-                        href={email.lead.icpId ? `/icps/${email.lead.icpId}/review` : "/icps"}
+                        href={`${email.lead.icpId ? `/icps/${email.lead.icpId}/review` : "/review"}?email=${encodeURIComponent(email.id)}`}
                         className="flex items-center gap-3 px-5 py-2.5 transition-colors hover:bg-muted/60"
                       >
                         <div className="min-w-0 flex-1">

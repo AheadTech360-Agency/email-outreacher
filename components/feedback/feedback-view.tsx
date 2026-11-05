@@ -3,12 +3,17 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
-import { ExternalLink, Mail, MessageSquareText, Sparkles, ThumbsDown, ThumbsUp } from "lucide-react"
+import { ArrowLeft, ArrowRight, ExternalLink, LayoutGrid, List, Mail, MessageSquareText, Search, SlidersHorizontal, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
 import { FeedbackControl, TAG_LABEL } from "@/components/feedback/feedback-control"
 import { ManagerOnly } from "@/components/manager-only"
+import { ListTools } from "@/components/list-tools"
+import { Pager } from "@/components/pager"
+import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { filterFeedback } from "@/lib/feedback-filter"
 import { PageHeader } from "@/components/page-header"
 import { Pill } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -46,7 +51,7 @@ export function FeedbackView() {
     <>
       <PageHeader
         title="Feedback"
-        description="Rate every email Claude writes. Each ICP's latest good and bad emails are shown to Claude as examples when it writes the next ones, and you can have it improve the prompt from your feedback."
+        description="Find an email, rate what worked, and use your feedback to improve the next draft."
       />
       <div className="space-y-4 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <Feedback key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -62,15 +67,36 @@ function Feedback({ wsId }: { wsId: string }) {
   const [icpId, setIcpId] = useState("all")
   const [filter, setFilter] = useState("unrated")
   const [openId, setOpenId] = useState<string | null>(null)
+  const [openOrder, setOpenOrder] = useState<string[]>([])
   const [improving, setImproving] = useState<ApiIcp | null>(null)
   const [busy, setBusy] = useState("")
+  const [query, setQuery] = useState("")
+  const [icpQuery, setIcpQuery] = useState("")
+  const [hookFilter, setHookFilter] = useState("all")
+  const [tagFilter, setTagFilter] = useState("all")
+  const [scoreFilter, setScoreFilter] = useState("all")
+  const [sort, setSort] = useState("newest")
+  const [view, setView] = useState("list")
+  const [showFilters, setShowFilters] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   if (emails.error && !emails.data) return <BackendError message={emails.error} onRetry={emails.reload} />
   if (!emails.data) return <TableSkeleton rows={6} />
 
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const forIcp = emails.data.filter((d) => icpId === "all" || d.lead.icpId === icpId)
-  const visible = forIcp.filter(FILTERS.find((f) => f.value === filter)!.test)
+  const forIcp = emails.data.filter((d) => icpId === "all" || (icpId === "none" ? !d.lead.icpId : d.lead.icpId === icpId))
+  const matching = filterFeedback(forIcp, { query, hook: hookFilter, tag: tagFilter, score: scoreFilter, sort }, icpName, TAG_LABEL)
+  const visible = matching.filter(FILTERS.find((f) => f.value === filter)!.test)
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(visible.length / pageSize)))
+  const shown = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const hasFilters = !!query || icpId !== "all" || hookFilter !== "all" || tagFilter !== "all" || scoreFilter !== "all" || filter !== "unrated"
+  const extraFilters = Number(hookFilter !== "all") + Number(tagFilter !== "all") + Number(scoreFilter !== "all")
+  const resetFilters = () => { setQuery(""); setIcpId("all"); setIcpQuery(""); setHookFilter("all"); setTagFilter("all"); setScoreFilter("all"); setFilter("unrated"); setPage(1) }
+  const availableIds = new Set(emails.data.map((d) => d.id))
+  const navigationIds = openOrder.filter((id) => availableIds.has(id))
+  const openIndex = navigationIds.indexOf(openId ?? "")
+  const openEmail = (id: string) => { setOpenOrder(visible.map((d) => d.id)); setOpenId(id) }
   const open = emails.data.find((d) => d.id === openId) ?? null
   const activeIcp = icps.data?.find((i) => i.id === icpId)
   const ratedForIcp = forIcp.filter((d) => d.feedback).length
@@ -96,6 +122,7 @@ function Feedback({ wsId }: { wsId: string }) {
     try {
       const keep = d.feedback?.rating === rating
       await rateEmail(wsId, d.id, { rating, tags: keep ? d.feedback!.tags : [], note: keep ? d.feedback!.note : "" })
+      toast.success(rating === "good" ? "Marked good" : "Marked bad")
       emails.reload()
     } catch (e) {
       toast.error("Couldn't save the rating", { description: e instanceof Error ? e.message : undefined })
@@ -120,61 +147,126 @@ function Feedback({ wsId }: { wsId: string }) {
 
   return (
     <>
+      <ListTools wsId={wsId} scope="feedback" filters={{ query, icpId, filter, hook: hookFilter, tag: tagFilter, score: scoreFilter, sort, view }}
+        onApply={(v) => { setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "unrated"); setHookFilter(["all", "with", "without"].includes(v.hook) ? v.hook : "all"); setTagFilter(v.tag in TAG_LABEL ? v.tag : "all"); setScoreFilter(["all", "low", "medium", "high", "unscored"].includes(v.score) ? v.score : "all"); setSort(["newest", "oldest", "rated", "score-low", "score-high"].includes(v.sort) ? v.sort : "newest"); setView(v.view === "cards" ? "cards" : "list"); setPage(1) }} onRefresh={emails.reload} />
+      <div className="rounded-lg border bg-muted/20 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div><p className="text-sm font-medium">Feedback library</p>
+            <p className="text-xs text-muted-foreground">Open any email to read it in full, add notes, or save it as an example.</p></div>
+          <p className="text-sm tabular-nums text-muted-foreground">{emails.data.filter((d) => d.feedback).length} of {emails.data.length} rated</p>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={icpId} onValueChange={setIcpId}>
+        <div className="relative min-w-52 flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input aria-label="Search feedback" placeholder="Search people, companies, subjects, email text or notes..."
+            className="pl-9 pr-9" value={query} onChange={(e) => { setQuery(e.target.value); setPage(1) }} />
+          {query && <button type="button" aria-label="Clear search" onClick={() => { setQuery(""); setPage(1) }}
+            className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground focus-visible:outline-2"><X className="size-4" /></button>}
+        </div>
+        <Select value={icpId} onValueChange={(value) => { setIcpId(value); setPage(1) }}>
           <SelectTrigger aria-label="ICP" className="w-60!">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <div className="p-2"><Input aria-label="Search ICP filters" placeholder="Find an ICP..." value={icpQuery}
+              onChange={(e) => setIcpQuery(e.target.value)} onKeyDown={(e) => { if (e.key !== "Escape") e.stopPropagation() }} /></div>
             <SelectItem value="all">All ICPs</SelectItem>
-            {(icps.data ?? []).map((i) => (
+            <SelectItem value="none">No ICP</SelectItem>
+            {(icps.data ?? []).filter((i) => i.name.toLowerCase().includes(icpQuery.trim().toLowerCase())).map((i) => (
               <SelectItem key={i.id} value={i.id}>
                 {i.name}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        <div className="ml-auto flex items-center gap-2">
-          {activeIcp && ratedForIcp < MIN_RATED && (
-            <span className="text-xs text-muted-foreground">Rate {MIN_RATED - ratedForIcp} more to improve the prompt</span>
-          )}
-          <ManagerOnly><Button
-            variant="outline"
-            disabled={!activeIcp || ratedForIcp < MIN_RATED}
-            title={!activeIcp ? "Pick an ICP first" : undefined}
-            onClick={() => activeIcp && setImproving(activeIcp)}
-          >
-            <Sparkles /> Improve email prompt
-          </Button></ManagerOnly>
-        </div>
+        <Button variant="outline" aria-expanded={showFilters} onClick={() => setShowFilters(!showFilters)}>
+          <SlidersHorizontal /> Filters{extraFilters ? ` (${extraFilters})` : ""}
+        </Button>
+        {hasFilters && <Button variant="ghost" onClick={resetFilters}><X /> Reset</Button>}
       </div>
-
-      <div role="tablist" aria-label="Filter by rating" className="flex flex-wrap gap-1.5">
+      {icps.error && <p role="alert" className="text-sm text-destructive">Could not load ICPs. <button className="underline" onClick={icps.reload}>Retry</button></p>}
+      {showFilters && <div className="grid gap-3 rounded-lg border bg-muted/20 p-4 sm:grid-cols-3">
+        <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Personalization</p>
+          <Select value={hookFilter} onValueChange={(v) => { setHookFilter(v); setPage(1) }}>
+            <SelectTrigger className="w-full" aria-label="Filter by hook"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Any hook</SelectItem><SelectItem value="with">Has a post hook</SelectItem><SelectItem value="without">No post hook</SelectItem></SelectContent>
+          </Select></div>
+        <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Feedback reason</p>
+          <Select value={tagFilter} onValueChange={(v) => { setTagFilter(v); setFilter("all"); setPage(1) }}>
+            <SelectTrigger className="w-full" aria-label="Filter by feedback reason"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Any reason</SelectItem>{Object.entries(TAG_LABEL).map(([tag, label]) => <SelectItem key={tag} value={tag}>{label}</SelectItem>)}</SelectContent>
+          </Select></div>
+        <div className="space-y-1.5"><p className="text-xs text-muted-foreground">Email score</p>
+          <Select value={scoreFilter} onValueChange={(v) => { setScoreFilter(v); setPage(1) }}>
+            <SelectTrigger className="w-full" aria-label="Filter by email score"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="all">Any score</SelectItem><SelectItem value="low">Below 60</SelectItem><SelectItem value="medium">60-79</SelectItem><SelectItem value="high">80 and above</SelectItem><SelectItem value="unscored">Not scored</SelectItem></SelectContent>
+          </Select></div>
+      </div>}
+      <div role="group" aria-label="Filter by rating" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {FILTERS.map((f) => (
           <button
             key={f.value}
             type="button"
-            role="tab"
-            aria-selected={filter === f.value}
-            onClick={() => setFilter(f.value)}
+            aria-pressed={filter === f.value}
+            onClick={() => { setFilter(f.value); setPage(1) }}
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
+              "flex min-h-20 items-center justify-between gap-3 rounded-lg border px-4 py-3 text-left text-sm transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50",
               filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            {f.label} <span className="tabular-nums opacity-70">{forIcp.filter(f.test).length}</span>
+            <span>{f.label}</span><span className="text-2xl font-semibold tabular-nums">{matching.filter(f.test).length}</span>
           </button>
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p role="status" className="text-sm text-muted-foreground">{visible.length} matching {visible.length === 1 ? "email" : "emails"}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={sort} onValueChange={(v) => { setSort(v); setPage(1) }}>
+            <SelectTrigger className="w-48" aria-label="Sort feedback"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="newest">Newest first</SelectItem><SelectItem value="oldest">Oldest first</SelectItem>
+              <SelectItem value="score-low">Lowest score first</SelectItem><SelectItem value="score-high">Highest score first</SelectItem><SelectItem value="rated">Recently rated</SelectItem></SelectContent>
+          </Select>
+          <div role="group" aria-label="Feedback layout" className="flex gap-1">
+            <Button variant={view === "list" ? "secondary" : "ghost"} size="icon" aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><List /></Button>
+            <Button variant={view === "cards" ? "secondary" : "ghost"} size="icon" aria-label="Card view" aria-pressed={view === "cards"} onClick={() => setView("cards")}><LayoutGrid /></Button>
+          </div>
+        </div>
+      </div>
       {visible.length === 0 ? (
-        <EmptyState icon={MessageSquareText} title="Nothing here" description="Try another filter or ICP." />
+        <EmptyState icon={MessageSquareText} title="No matching emails" description="Try a different search, rating, or ICP."
+          action={<Button variant="outline" onClick={resetFilters}>Reset filters</Button>} />
+      ) : view === "list" ? (
+        <div className="overflow-hidden rounded-lg border">
+          <Table><TableHeader><TableRow><TableHead>Email / recipient</TableHead><TableHead>ICP</TableHead><TableHead>Score</TableHead><TableHead>Feedback</TableHead><TableHead>Written</TableHead><TableHead className="text-right">Rate</TableHead></TableRow></TableHeader>
+          <TableBody>{shown.map((d) => <TableRow key={d.id}>
+            <TableCell className="max-w-80"><button type="button" className="block max-w-full rounded-sm text-left focus-visible:outline-2" onClick={() => openEmail(d.id)}>
+              <span className="block truncate font-medium hover:underline">{d.subject || "Untitled email"}</span>
+              <span className="block truncate text-xs text-muted-foreground">{name(d)}{d.lead.company ? ` at ${d.lead.company}` : ""}</span>
+              <span className="mt-1 block truncate text-xs text-muted-foreground">{d.body}</span>
+            </button></TableCell>
+            <TableCell className="max-w-40 truncate text-xs text-muted-foreground">{d.lead.icpId ? icpName.get(d.lead.icpId) ?? "Unknown ICP" : "No ICP"}</TableCell>
+            <TableCell className="tabular-nums">{d.score ?? "Not scored"}</TableCell>
+            <TableCell><button type="button" className="rounded-sm text-left focus-visible:outline-2" onClick={() => openEmail(d.id)}>
+              <Pill tone={d.feedback?.rating === "good" ? "positive" : d.feedback ? "negative" : "neutral"}>{d.feedback?.rating === "good" ? "Good" : d.feedback ? "Bad" : "Not rated"}</Pill>
+              {d.feedback?.note && <span className="mt-1 block max-w-44 truncate text-xs text-muted-foreground">{d.feedback.note}</span>}
+            </button></TableCell>
+            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{shortDate(d.createdAt)}</TableCell>
+            <TableCell><div className="flex justify-end gap-1">
+              <Button size="icon-sm" variant="outline" aria-label={`Mark ${d.subject} good`} aria-pressed={d.feedback?.rating === "good"} disabled={!!busy}
+                className={cn(d.feedback?.rating === "good" && "border-positive text-positive")} onClick={() => void quickRate(d, "good")}><ThumbsUp /></Button>
+              <Button size="icon-sm" variant="outline" aria-label={`Mark ${d.subject} bad`} aria-pressed={d.feedback?.rating === "bad"} disabled={!!busy}
+                className={cn(d.feedback?.rating === "bad" && "border-negative text-negative")} onClick={() => void quickRate(d, "bad")}><ThumbsDown /></Button>
+            </div></TableCell>
+          </TableRow>)}</TableBody></Table>
+        </div>
       ) : (
         <ul className="grid gap-3 lg:grid-cols-2">
-          {visible.map((d) => (
+          {shown.map((d) => (
             <li key={d.id} className="flex flex-col gap-2 rounded-lg border p-4">
               <div className="flex items-start justify-between gap-3">
-                <button type="button" className="min-w-0 text-left" onClick={() => setOpenId(d.id)}>
+                <button type="button" className="min-w-0 text-left" onClick={() => openEmail(d.id)}>
                   <p className="truncate text-sm font-medium hover:underline">{d.subject}</p>
                   <p className="truncate text-[13px] text-muted-foreground">
                     To {name(d)}
@@ -188,7 +280,7 @@ function Feedback({ wsId }: { wsId: string }) {
                     variant="outline"
                     aria-label="Good"
                     aria-pressed={d.feedback?.rating === "good"}
-                    disabled={busy === d.id}
+                    disabled={!!busy}
                     className={cn(d.feedback?.rating === "good" && "border-positive bg-positive/10 text-positive")}
                     onClick={() => void quickRate(d, "good")}
                   >
@@ -199,7 +291,7 @@ function Feedback({ wsId }: { wsId: string }) {
                     variant="outline"
                     aria-label="Bad"
                     aria-pressed={d.feedback?.rating === "bad"}
-                    disabled={busy === d.id}
+                    disabled={!!busy}
                     className={cn(d.feedback?.rating === "bad" && "border-negative bg-negative/10 text-negative")}
                     onClick={() => void quickRate(d, "bad")}
                   >
@@ -216,7 +308,7 @@ function Feedback({ wsId }: { wsId: string }) {
                   </Pill>
                 ))}
                 {d.feedback?.note && <span className="truncate text-xs text-muted-foreground">“{d.feedback.note}”</span>}
-                <button type="button" className="ml-auto text-xs text-data hover:underline" onClick={() => setOpenId(d.id)}>
+                <button type="button" className="ml-auto text-xs text-data hover:underline" onClick={() => openEmail(d.id)}>
                   {d.feedback ? "Edit feedback" : "Add feedback"}
                 </button>
               </div>
@@ -225,9 +317,39 @@ function Feedback({ wsId }: { wsId: string }) {
         </ul>
       )}
 
+      {visible.length > 0 && <Pager page={currentPage} pageSize={pageSize} total={visible.length} onPage={setPage}
+        onPageSize={(size) => { setPageSize(size); setPage(1) }} />}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+        <div><p className="text-sm font-medium">Improve future emails</p>
+          <p className="text-xs text-muted-foreground">{activeIcp ? `Using ${ratedForIcp} ratings for ${activeIcp.name}.` : "Choose one ICP to improve its email prompt."}</p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          {activeIcp && ratedForIcp < MIN_RATED && (
+            <span className="text-xs text-muted-foreground">Rate {MIN_RATED - ratedForIcp} more to improve the prompt</span>
+          )}
+          <ManagerOnly><Button
+            variant="outline"
+            disabled={!activeIcp || ratedForIcp < MIN_RATED}
+            title={!activeIcp ? "Pick an ICP first" : undefined}
+            onClick={() => activeIcp && setImproving(activeIcp)}
+          >
+            <Sparkles /> Improve email prompt
+          </Button></ManagerOnly>
+        </div>
+      </div>
+
       {open && (
         <Sheet open onOpenChange={(o) => !o && setOpenId(null)}>
           <SheetContent className="w-full! gap-0 overflow-y-auto sm:max-w-xl!">
+            <div className="flex items-center justify-between gap-2 border-b px-5 py-3 pr-12">
+              <span className="text-xs text-muted-foreground">{openIndex >= 0 ? `${openIndex + 1} of ${navigationIds.length} emails in this session` : "Email feedback"}</span>
+              <div className="flex gap-1">
+                <Button size="icon-sm" variant="outline" aria-label="Previous feedback email" disabled={openIndex <= 0 || !!busy}
+                  onClick={() => setOpenId(navigationIds[openIndex - 1])}><ArrowLeft /></Button>
+                <Button size="icon-sm" variant="outline" aria-label="Next feedback email" disabled={openIndex < 0 || openIndex >= navigationIds.length - 1 || !!busy}
+                  onClick={() => setOpenId(navigationIds[openIndex + 1])}><ArrowRight /></Button>
+              </div>
+            </div>
             <SheetHeader className="px-5 pt-5 pb-4">
               <SheetTitle className="text-lg">{open.subject}</SheetTitle>
               <SheetDescription>
@@ -238,6 +360,10 @@ function Feedback({ wsId }: { wsId: string }) {
               </SheetDescription>
             </SheetHeader>
             <section className="space-y-2 border-t border-rule px-5 py-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span>{open.lead.email ?? "No email address"} / {shortDate(open.createdAt)}</span>
+                <Link className="text-data hover:underline" href={`/review?email=${encodeURIComponent(open.id)}`}>Open in Review</Link>
+              </div>
               <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{open.body}</p>
               {open.edited && <p className="text-xs text-muted-foreground">This is the edited version; Claude&apos;s original is kept.</p>}
             </section>

@@ -1,5 +1,7 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { presenceMatches, recentMatches, scoreMatches, PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
 import { useEffect, useState } from "react"
 import { ArrowRightLeft, Search, Sparkles, Trash2, Users, Wand2 } from "lucide-react"
 import { toast } from "sonner"
@@ -41,6 +43,7 @@ export default function LeadsPage() {
   useEffect(() => reloadLeads(), [reloadLeads])
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState("")
+  const [extra, setExtra] = useState<Record<string, string>>({})
   const [icpFilter, setIcpFilter] = useState("all")
   const [status, setStatus] = useState("all")
   const [source, setSource] = useState("all")
@@ -56,6 +59,10 @@ export default function LeadsPage() {
   const visible = leads.filter((l) => {
     const sources = leadSources(l)
     return (
+      presenceMatches(l.linkedinUrl, extra.linkedin) &&
+      presenceMatches(l.postCount, extra.posts) &&
+      scoreMatches(l.score?.value, extra.score) &&
+      recentMatches(l.queuedAt, extra.queued) &&
       (icpFilter === "all" || l.icpId === icpFilter) &&
       (status === "all" || l.status === status) &&
       (source === "all" ||
@@ -64,7 +71,7 @@ export default function LeadsPage() {
       (!q || `${fullName(l)} ${l.email} ${l.company} ${l.title}`.toLowerCase().includes(q))
     )
   })
-  const filtered = query || icpFilter !== "all" || status !== "all" || source !== "all" || emailFilter !== "all"
+  const filtered = Object.values(extra).some((v) => v && v !== "all") || query || icpFilter !== "all" || status !== "all" || source !== "all" || emailFilter !== "all"
   const noEmail = leads.filter((l) => !l.email)
   const allShownPicked = visible.length > 0 && visible.every((l) => selected.has(l.id))
   const ids = Array.from(selected)
@@ -74,6 +81,7 @@ export default function LeadsPage() {
   const runHint = ids.length === 0 ? "Select leads first" : runIcp ? undefined : "Select leads from one ICP"
 
   const clear = () => {
+    setExtra({})
     setQuery("")
     setIcpFilter("all")
     setStatus("all")
@@ -89,6 +97,12 @@ export default function LeadsPage() {
         actions={<AddLeadsMenu variant="default" />}
       />
       <div className="space-y-4 px-4 pb-10 md:px-8">
+        <FacetFilters values={extra} onChange={setExtra} count={visible.length} fields={[
+          {key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},
+          {key:"posts",label:"Fetched posts",options:PRESENCE_OPTIONS},
+          {key:"score",label:"Lead score",options:SCORE_OPTIONS},
+          {key:"queued",label:"Queued date",options:RECENT_OPTIONS},
+        ]} />
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative w-full sm:w-64">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />

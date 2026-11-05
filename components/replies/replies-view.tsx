@@ -1,5 +1,10 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { choices, presenceMatches, recentMatches, textMatches, PRESENCE_OPTIONS, RECENT_OPTIONS } from "@/lib/facets"
+import { ListTools } from "@/components/list-tools"
+import { Input } from "@/components/ui/input"
+
 import { useState } from "react"
 import { Inbox, RotateCw } from "lucide-react"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
@@ -21,17 +26,27 @@ export function RepliesView() {
 function Replies({ wsId }: { wsId: string }) {
   const threads = useApi(() => fetchReplies(wsId), [wsId])
   const [openId, setOpenId] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+  const [extra, setExtra] = useState<Record<string, string>>({})
 
   if (threads.error && !threads.data) return <BackendError message={threads.error} onRetry={threads.reload} />
   if (!threads.data) return <TableSkeleton rows={6} />
 
+  const visible = threads.data.filter((t) => textMatches(query,t.leadName,t.leadEmail,t.subject,t.preview,t.campaign,t.mailbox) &&
+    (!extra.campaign || extra.campaign === "all" || t.campaign === extra.campaign) &&
+    (!extra.mailbox || extra.mailbox === "all" || t.mailbox === extra.mailbox) &&
+    (!extra.classification || extra.classification === "all" || (t.classification || "unclassified") === extra.classification) &&
+    presenceMatches(t.unreadCount, extra.unread) && recentMatches(t.lastMessageAt, extra.date))
   const open = threads.data.find((t) => t.id === openId) ?? null
 
   return (
     <div className="space-y-4">
+      <ListTools wsId={wsId} scope="replies" filters={{query,...extra}} onApply={(v)=>{setQuery(v.query ?? "");setExtra(Object.fromEntries(["campaign","mailbox","classification","unread","date"].filter((key)=>v[key]).map((key)=>[key,v[key]])))}} onRefresh={threads.reload} />
+      <Input aria-label="Search replies" placeholder="Search person, email, subject or reply text" value={query} onChange={(e)=>setQuery(e.target.value)} />
+      <FacetFilters values={extra} onChange={setExtra} count={visible.length} fields={[{key:"campaign",label:"Reply campaign",options:choices(threads.data.map((t)=>t.campaign))},{key:"mailbox",label:"Receiving mailbox",options:choices(threads.data.map((t)=>t.mailbox))},{key:"classification",label:"Reply classification",options:choices(threads.data.map((t)=>t.classification || "unclassified"))},{key:"unread",label:"Unread messages",options:PRESENCE_OPTIONS},{key:"date",label:"Last message date",options:RECENT_OPTIONS}]} />
       <div className="flex items-center gap-2">
         <p className="flex-1 text-[13px] text-muted-foreground">
-          {threads.data.length} conversation{threads.data.length === 1 ? "" : "s"} with a reply. To answer, use the inbox in CheapSequencer or the
+          {visible.length} of {threads.data.length} conversation{threads.data.length === 1 ? "" : "s"} with a reply. To answer, use the inbox in CheapSequencer or the
           mailbox itself.
         </p>
         <Button size="sm" variant="outline" onClick={threads.reload} disabled={threads.loading}>
@@ -39,15 +54,15 @@ function Replies({ wsId }: { wsId: string }) {
         </Button>
       </div>
 
-      {threads.data.length === 0 ? (
+      {visible.length === 0 ? (
         <EmptyState
           icon={Inbox}
-          title="No replies yet"
-          description="When a lead in a Coldbrew campaign writes back, the conversation shows up here and their follow-ups stop."
+          title={threads.data.length ? "No matching replies" : "No replies yet"}
+          description={threads.data.length ? "Change the search or clear extra filters." : "When a lead writes back, the conversation appears here and their follow-ups stop."}
         />
       ) : (
         <ul className="divide-y divide-rule overflow-hidden rounded-lg border">
-          {threads.data.map((t) => (
+          {visible.map((t) => (
             <li key={t.id}>
               <button
                 type="button"

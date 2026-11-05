@@ -1,11 +1,17 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { choices, pickFacets, presenceMatches, scoreMatches, textMatches, PRESENCE_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Building2, Check, ChevronDown, DatabaseZap, Download, FileDown, FlaskConical, MapPin, Newspaper, RotateCcw, Search, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { ArchiveFilter, ArchiveRecordsButton } from "@/components/archive-records"
+import { ListTools, BulkSelection } from "@/components/list-tools"
+import { DeleteRecordsButton } from "@/components/delete-records-button"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
 import { ReadPostsDialog } from "@/components/read-posts-dialog"
@@ -87,12 +93,14 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
+  const [extra, setExtra] = useState<Record<string, string>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [finding, setFinding] = useState<CompanySource | null>(null)
   const [stakeholdersFor, setStakeholdersFor] = useState<PipelineCompany[] | null>(null)
   const [busy, setBusy] = useState("")
 
-  const list = companies.data ?? []
+  const [archiveFilter, setArchiveFilter] = useState("active")
+  const list = (companies.data ?? []).filter((row) => archiveFilter === "all" || (archiveFilter === "archived" ? row.archived : !row.archived))
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
   const counts = Object.fromEntries(FILTERS.map((f) => [f.value, f.value === "all" ? list.length : list.filter((c) => c.status === f.value).length]))
   const peopleAt = new Map<string, number>()
@@ -100,7 +108,11 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
 
   const q = query.trim().toLowerCase()
   const visible = list.filter(
-    (c) => (filter === "all" || c.status === filter) && (!q || `${c.name} ${c.domain ?? ""}`.toLowerCase().includes(q)),
+    (c) => (filter === "all" || c.status === filter) &&
+      (!extra.source || extra.source === "all" || c.source === extra.source) &&
+      textMatches(extra.location, c.city, c.state) && presenceMatches(c.websiteUrl || c.domain, extra.website) &&
+      presenceMatches(peopleAt.get(c.id), extra.contacts) && scoreMatches(c.score, extra.scoreBand) &&
+      presenceMatches(c.icpId, extra.icpState) && (!q || `${c.name} ${c.domain ?? ""}`.toLowerCase().includes(q)),
   )
   // One page of the filtered companies; a filter that shrinks the list past this page shows its last page.
   const pages = Math.max(1, Math.ceil(visible.length / pageSize))
@@ -270,6 +282,14 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         </div>
       )}
 
+      {/* One row: more filters and which records, then saved views. The fields open under it. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"source",label:"Company source",options:choices(list.map((c)=>c.source))},{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
+        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Set()); setPage(1) }} />
+        <div className="ml-auto">
+          <ListTools wsId={wsId} scope="companies" filters={{ query, icpId, filter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["source","location","website","contacts","scoreBand","icpState"])); setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(["all", "review", "qualified", "found", "not_fit", "error"].includes(v.filter) ? v.filter as "all" | PipelineStatus : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Set()); setPage(1) }} onRefresh={() => { companies.reload(); people.reload() }} />
+        </div>
+      </div>
       <div role="tablist" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
         {FILTERS.map((f) => (
           <button
@@ -291,6 +311,11 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
+          <BulkSelection matchingIds={visible.map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={selected} onChange={setSelected} disabled={!!busy} />
+          <ArchiveRecordsButton workspaceId={wsId} kind="company" ids={picked.map((row) => row.id)} restore={archiveFilter === "archived"} disabled={!!busy}
+            onChanged={() => { setSelected(new Set()); companies.reload() }} />
+          <DeleteRecordsButton workspaceId={wsId} kind="company" ids={picked.map((row) => row.id)} disabled={!!busy}
+            onDeleted={() => { setSelected(new Set()); setPage(1); companies.reload(); people.reload() }} />
           <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
             Clear
           </Button>

@@ -26,6 +26,8 @@ import { useStore } from "@/lib/store"
 import type { PromptKind, PromptTemplate } from "@/lib/types"
 
 const SECTIONS: { kind: PromptKind; title: string; description: string }[] = [
+  {kind:"analysis",title:"Smart analysis",description:"Acts as a senior data analyst using recorded email, hook and source performance. Used only when you refresh analysis."},
+  {kind:"product",title:"Product suggestions",description:"Organizes product fields and notes into proposed changes. Every change requires manual approval from Products. Uses the workspace default."},
   {
     kind: "verify",
     title: "Company verification",
@@ -191,6 +193,10 @@ export default function PromptsPage() {
                                 ) : (
                                   <span className="text-xs text-muted-foreground">Not used</span>
                                 )
+                              ) : t.kind === "analysis" ? (
+                                t.isDefault ? <Link href="/analysis"><Badge variant="outline" className="font-normal">Smart analysis</Badge></Link> : <span className="text-xs text-muted-foreground">Not used</span>
+                              ) : t.kind === "product" ? (
+                                t.isDefault ? <Link href="/products"><Badge variant="outline" className="font-normal">Product suggestions</Badge></Link> : <span className="text-xs text-muted-foreground">Not used</span>
                               ) : FOLLOWUP_KINDS.includes(t.kind) ? (
                                 t.isDefault ? (
                                   <Badge variant="outline" className="font-normal">

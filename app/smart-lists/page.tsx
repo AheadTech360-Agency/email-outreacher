@@ -1,5 +1,8 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight, Download, ListTree, Plus, Search, Sparkles, Trash2 } from "lucide-react"
@@ -48,6 +51,7 @@ const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 
 function SmartLists({ wsId }: { wsId: string }) {
   const [kind, setKind] = useState<SmartListKind>("company")
+  const [extra, setExtra] = useState<Record<string,string>>({})
   const [openId, setOpenId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [sorting, setSorting] = useState(false)
@@ -76,6 +80,8 @@ function SmartLists({ wsId }: { wsId: string }) {
 
   const unsorted = lists.data?.unsorted ?? 0
   const all = lists.data?.lists ?? []
+  const matchingLists = all.filter((list)=>textMatches(extra.query,list.name,list.icpDraft?.name) &&
+    presenceMatches(list.leadIntelIcpId,extra.icp) && presenceMatches(list.icpDraft,extra.draft) && presenceMatches(list.count,extra.members))
   // Company lists with no ICP yet: a draft waiting for you, or none drafted (never "Uncategorized").
   const waiting = kind === "company" ? all.filter((l) => !l.leadIntelIcpId && l.icpDraft) : []
   const undrafted = kind === "company" ? all.filter((l) => !l.leadIntelIcpId && !l.icpDraft && l.name !== "Uncategorized" && l.count > 0) : []
@@ -105,6 +111,7 @@ function SmartLists({ wsId }: { wsId: string }) {
           value={kind}
           onValueChange={(v) => {
             setKind(v as SmartListKind)
+            setExtra({})
             setOpenId(null)
           }}
         >
@@ -169,10 +176,12 @@ function SmartLists({ wsId }: { wsId: string }) {
         </div>
       )}
 
-      {lists.data && lists.data.lists.length === 0 ? (
+      <Input aria-label="Search smart lists" placeholder="Search list name or draft ICP" value={extra.query ?? ""} onChange={(e)=>setExtra({...extra,query:e.target.value})} />
+      <FacetFilters values={extra} onChange={setExtra} count={matchingLists.length} fields={[{key:"members",label:"List members",options:PRESENCE_OPTIONS},...(kind === "company" ? [{key:"icp",label:"Linked ICP",options:PRESENCE_OPTIONS},{key:"draft",label:"Draft ICP",options:PRESENCE_OPTIONS}] : [])]} />
+      {lists.data && matchingLists.length === 0 ? (
         <EmptyState
           icon={ListTree}
-          title="No smart lists yet"
+          title={all.length ? "No matching smart lists" : "No smart lists yet"}
           description={
             unsorted
               ? `Sort your ${what} and Claude puts each one in a broad list, like ${kind === "company" ? "Retail or Manufacturing" : "Owners & Executives or Marketing"}.`
@@ -184,7 +193,7 @@ function SmartLists({ wsId }: { wsId: string }) {
       ) : (
         <div className="grid items-start gap-5 lg:grid-cols-[280px_1fr]">
           <ul className="space-y-1 lg:sticky lg:top-4 lg:max-h-[calc(100svh-2rem)] lg:overflow-y-auto lg:pr-1">
-            {(lists.data?.lists ?? []).map((l) => (
+            {matchingLists.map((l) => (
               <li key={l.id}>
                 <button
                   type="button"

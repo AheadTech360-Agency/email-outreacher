@@ -171,6 +171,8 @@ export type PromptKind =
   | "followup5"
   | "sort"
   | "sort_people"
+  | "product"
+  | "analysis"
 
 export interface PromptTemplate {
   id: string

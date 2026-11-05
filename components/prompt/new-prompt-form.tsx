@@ -271,7 +271,7 @@ export function NewPromptForm({ initialKind }: { initialKind: PromptKind }) {
                 <div>
                   <Label htmlFor="make-default">Make it the default {KIND_LABEL[kind].toLowerCase()} prompt</Label>
                   <p className="text-xs text-muted-foreground">
-                    {kind === "score"
+                    {kind === "analysis" ? "Used when Smart analysis is refreshed in this workspace." : kind === "product" ? "Used by AI suggestions on Products for this workspace." : kind === "score"
                       ? `Used when Settings is on "Use default". Now: ${currentDefault?.name}.`
                       : `ICPs set to "Use default" switch to it. Now: ${currentDefault?.name}.`}
                   </p>

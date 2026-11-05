@@ -1,5 +1,6 @@
 "use client"
 
+import { fetchProducts, useApi } from "@/lib/api"
 import { useRef, type Dispatch, type SetStateAction } from "react"
 import { AlertTriangle } from "lucide-react"
 import { HighlightedEditor } from "@/components/prompt/highlighted-editor"
@@ -14,6 +15,7 @@ import { availableVariables, unknownVariables } from "@/lib/templating"
 import type { PromptKind } from "@/lib/types"
 
 const GROUPS: { label: string; match: (v: string) => boolean }[] = [
+  {label:"Analysis",match:(v)=>v.startsWith("analysis.")},
   { label: "ICP", match: (v) => v.startsWith("icp.") },
   { label: "Lead", match: (v) => v.startsWith("lead.") },
   { label: "Company", match: (v) => v.startsWith("company.") },
@@ -39,7 +41,9 @@ export function PromptBody({
   setDraft: Dispatch<SetStateAction<VersionDraft>>
   userError?: string
 }) {
-  const { leads } = useStore()
+  const { leads, currentWorkspaceId } = useStore()
+  const products = useApi(() => currentWorkspaceId && kind !== "analysis" && kind !== "sort" && kind !== "sort_people" ? fetchProducts(currentWorkspaceId) : Promise.resolve([]), [currentWorkspaceId, kind])
+  const customVariables = [...new Set((products.data ?? []).filter((p)=>!p.archived).flatMap((p)=>(p.customFields ?? []).map((f)=>`product.custom.${f.key}`)))].sort()
   const systemRef = useRef<HTMLTextAreaElement>(null)
   const userRef = useRef<HTMLTextAreaElement>(null)
   const lastFocused = useRef<"systemPrompt" | "userPrompt">("userPrompt")
@@ -49,7 +53,7 @@ export function PromptBody({
   const unknown = unknownVariables(`${draft.systemPrompt}\n${draft.userPrompt}`, kind)
   const extraColumns = Array.from(new Set(leads.flatMap((l) => Object.keys(l.extra)))).sort()
   const variables = availableVariables(kind).flatMap((v) =>
-    v === "lead.extra.<column>" ? extraColumns.map((c) => `lead.extra.${c}`) : [v],
+    v === "lead.extra.<column>" ? extraColumns.map((c) => `lead.extra.${c}`) : v === "product.custom.<field>" ? customVariables : [v],
   )
 
   const insert = (name: string) => {
@@ -183,6 +187,9 @@ export function PromptBody({
           <CardDescription>Click to insert at the cursor.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
+          {kind === "analysis" && <p className="text-xs text-muted-foreground">Analysis data includes aggregate outcomes, comparisons, examples and coverage limitations for the selected period. Run from Analysis.</p>}
+          {kind !== "analysis" && kind !== "sort" && kind !== "sort_people" && <p className="text-xs text-muted-foreground">{kind === "product" ? "Product data includes every field and note currently in the product editor, plus current prompt references. Run this prompt from Products using AI suggestions." : "Product variables use the product selected for the ICP. Missing fields render empty; custom fields and notes are included as context automatically."}</p>}
+          {products.error && <p role="alert" className="text-xs text-destructive">Could not load custom product variables. <button type="button" className="underline" onClick={products.reload}>Retry</button></p>}
           {GROUPS.map((g) => {
             const vars = variables.filter(g.match)
             if (!vars.length) return null

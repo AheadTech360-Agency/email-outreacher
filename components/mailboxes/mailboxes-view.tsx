@@ -1,10 +1,13 @@
 "use client"
 
+import { FacetFilters } from "@/components/facet-filters"
+import { choices, presenceMatches, PRESENCE_OPTIONS } from "@/lib/facets"
 import { useState } from "react"
 import { AlertTriangle, Mails, RotateCw, Search, Sparkles, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
+import { CampaignReadinessPanel } from "@/components/mailboxes/campaign-readiness"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { Pill, type PillTone } from "@/components/status"
@@ -40,11 +43,17 @@ export function MailboxesView() {
   const data = useApi(fetchMailboxes, [])
   const [query, setQuery] = useState("")
   const [domain, setDomain] = useState("all")
+  const [extra, setExtra] = useState<Record<string, string>>({})
 
   const d = data.data
   const q = query.trim().toLowerCase()
   const shown = (d?.mailboxes ?? []).filter(
-    (m) => (domain === "all" || m.domain === domain) && (!q || `${m.name} ${m.email}`.toLowerCase().includes(q)),
+    (m) => (!extra.provider || extra.provider === "all" || m.provider === extra.provider) &&
+      (!extra.status || extra.status === "all" || m.status === extra.status) &&
+      (!extra.auth || extra.auth === "all" || m.authStatus === extra.auth) &&
+      presenceMatches(m.needsAttention, extra.attention) &&
+      presenceMatches(m.warmupEnabled, extra.warmup) &&
+      (domain === "all" || m.domain === domain) && (!q || `${m.name} ${m.email}`.toLowerCase().includes(q)),
   )
   const s = d?.summary
   const domains = d?.domains ?? []
@@ -164,6 +173,13 @@ export function MailboxesView() {
               </Select>
             </div>
 
+            <FacetFilters values={extra} onChange={setExtra} count={shown.length} fields={[
+              {key:"provider",label:"Provider",options:choices((d?.mailboxes ?? []).map((m) => m.provider))},
+              {key:"status",label:"Mailbox status",options:choices((d?.mailboxes ?? []).map((m) => m.status))},
+              {key:"auth",label:"Authentication status",options:choices((d?.mailboxes ?? []).map((m) => m.authStatus))},
+              {key:"attention",label:"Needs attention",options:[{value:"yes",label:"Needs attention"},{value:"no",label:"No issues reported"}]},
+              {key:"warmup",label:"Warmup enabled",options:PRESENCE_OPTIONS},
+            ]} />
             {!d ? (
               <TableSkeleton rows={8} />
             ) : d.mailboxes.length === 0 ? (
@@ -192,7 +208,10 @@ function CampaignsCard({ fallback }: { fallback: Mailboxes["campaigns"] }) {
     [currentWorkspaceId],
   )
   const [busy, setBusy] = useState(false)
-  const rows = sending.data ?? fallback.map((c) => ({ ...c, id: c.name, queued: null as number | null }))
+  const [query, setQuery] = useState("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const rows = (sending.data ?? fallback.map((c) => ({ ...c, id: c.name, queued: null as number | null })))
+    .filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()) && (statusFilter === "all" || c.status === statusFilter))
 
   const setUp = async () => {
     if (!currentWorkspaceId) return
@@ -205,7 +224,7 @@ function CampaignsCard({ fallback }: { fallback: Mailboxes["campaigns"] }) {
       const say = made.length ? `${made.length} set up: ${made.map((x) => x.icp).join(", ")}.` : "Every ICP already had its campaign."
       ;(skipped.length ? toast.warning : toast.success)(say, {
         id,
-        description: skipped.length ? skipped.map((x) => `${x.icp}: ${x.note}`).join(" ") : "New campaigns are drafts and don't send until activated.",
+        description: skipped.length ? skipped.map((x) => `${x.icp}: ${x.note}`).join(" ") : "New campaigns stay in draft. Nothing sends until you activate one in CheapSequencer.",
       })
       sending.reload()
     } catch (e) {
@@ -248,15 +267,23 @@ function CampaignsCard({ fallback }: { fallback: Mailboxes["campaigns"] }) {
           </>
         )}
       </div>
-      <ul className="mt-2 space-y-1.5">
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Input className="min-w-40 flex-1" aria-label="Search campaigns" placeholder="Search campaigns" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <Select value={statusFilter} onValueChange={setStatusFilter}><SelectTrigger className="w-36" aria-label="Filter campaigns by status"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="all">All statuses</SelectItem><SelectItem value="active">Active</SelectItem><SelectItem value="draft">Draft</SelectItem><SelectItem value="paused">Paused</SelectItem></SelectContent></Select>
+        <Button variant="outline" size="sm" disabled={sending.loading} onClick={sending.reload}><RotateCw /> Refresh</Button>
+      </div>
+      {sending.error && <p role="alert" className="mt-2 text-xs text-destructive">Live campaign status unavailable: {sending.error}. The list may be out of date.</p>}
+      <ul className="mt-3 space-y-3">
         {rows.map((c) => (
-          <li key={c.id} className="flex items-center gap-2 text-sm">
+          <li key={c.id} className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm">
             <span className="min-w-0 flex-1 truncate">{c.name}</span>
             {c.queued !== null && <span className="text-[13px] text-muted-foreground tabular-nums">{c.queued} queued</span>}
             {c.dailySendCap !== null && <span className="text-[13px] text-muted-foreground tabular-nums">{c.dailySendCap} a day</span>}
             <Pill tone={c.status === "active" ? "positive" : c.status === "paused" ? "warning" : "neutral"}>
               {c.status === "draft" ? "Draft, not sending" : c.status}
             </Pill>
+            {currentWorkspaceId && sending.data && <CampaignReadinessPanel wsId={currentWorkspaceId} campaignId={c.id} />}
           </li>
         ))}
         {rows.length === 0 && <li className="text-sm text-muted-foreground">No campaigns yet.</li>}

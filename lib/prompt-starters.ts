@@ -7,6 +7,12 @@ import type { PromptKind, PromptVersion } from "./types"
 type Starter = Pick<PromptVersion, "systemPrompt" | "userPrompt" | "temperature" | "maxTokens" | "maxPosts">
 
 export const PROMPT_STARTERS: Record<PromptKind, Starter> = {
+  analysis: {systemPrompt:"Act as a senior outbound data analyst. Use only recorded data. Separate observational associations from causation and reviewer ratings from recipient outcomes. Report counts and denominators, small samples, confounding and missing tracking. Never infer positive replies, revenue or open rates. Source is the chosen hook source; replies are sequence-level. Derive copy patterns only from supplied examples and never extrapolate their percentages. Recommend measurable experiments and link only supplied example IDs. Do not change campaigns, emails or prompts.",userPrompt:"Analyze the recorded data and explain what appears to work and what to test next:\n{{analysis.data}}",temperature:0,maxTokens:8192,maxPosts:null},
+  product: {
+    systemPrompt: "Organize product facts without inventing claims. Propose justified field edits, new distinct fields, and removal of empty or redundant fields. Preserve keys referenced by prompts. Move notes into relevant fields; only remove a note once its useful facts are preserved. Keep existing note IDs and valid unique snake_case custom field keys. Return a full proposed product, summary and reasons; never apply changes automatically.",
+    userPrompt: "Review all product data and suggest improvements:\n{{product.data}}",
+    temperature: 0, maxTokens: 16384, maxPosts: null,
+  },
   verify: {
     systemPrompt:
       "You decide whether a company is worth contacting. Judge ICP fit (is it the kind of business the ICP describes?) and product fit (would it want our product?) separately, then combine them into one score from 0 to 100. Use only the evidence given; when it's thin, score lower and say what's missing. Return a score, a one-sentence summary, up to 4 reasons and up to 4 concerns.",
@@ -231,6 +237,8 @@ Example emails in our voice:
 }
 
 export const KIND_LABEL: Record<PromptKind, string> = {
+  analysis:"Smart analysis",
+  product: "Product suggestions",
   verify: "Company verification",
   hook: "Hook selection",
   email: "Email generation",

@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, type CSSProperties } from "react"
-import { Building2, Calculator, House, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
+import { ChartNoAxesCombined, Building2, Calculator, House, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
+import { BackgroundActivity } from "@/components/background-activity"
 import { toast } from "sonner"
 import {
   Sidebar,
@@ -86,6 +87,7 @@ export function AppSidebar() {
         { href: "/review", label: "Emails to review", icon: Inbox, count: toReview, countLabel: `${toReview} drafts need review` },
         { href: "/outbox", label: "Sent", icon: Send },
         { href: "/replies", label: "Replies", icon: Reply },
+        { href: "/analysis", label: "Analysis", icon: ChartNoAxesCombined },
       ],
     },
     ...(canManage(me?.role)
@@ -179,6 +181,7 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="gap-3 px-2 pb-3">
         <SidebarMenu className="gap-0.5">
+          <BackgroundActivity />
           <CollapseToggle />
           <AccountMenu />
         </SidebarMenu>

@@ -5,6 +5,7 @@ import { useState } from "react"
 import { ArrowRight, CheckCircle2, Rocket, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
+import { HomeAttention } from "@/components/home-attention"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
@@ -88,6 +89,7 @@ function Home({ wsId }: { wsId: string }) {
           <TableSkeleton rows={6} />
         ) : (
           <>
+            <HomeAttention wsId={wsId} todo={d.todo} />
             <div className="grid gap-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               <NextSteps data={d} drafts={drafts.length} />
               <Drafts drafts={drafts} loading={!lists.data} onOpen={setOpen} />

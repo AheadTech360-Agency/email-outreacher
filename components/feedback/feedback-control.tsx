@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ThumbsDown, ThumbsUp } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -33,9 +33,11 @@ export function FeedbackControl({
   workspaceId,
   draft,
   onSaved,
+  onDirtyChange,
 }: {
   workspaceId: string
   draft: EmailDraft
+  onDirtyChange?: (dirty: boolean) => void
   onSaved: (updated: EmailDraft) => void
 }) {
   const [rating, setRating] = useState<"good" | "bad" | null>(draft.feedback?.rating ?? null)
@@ -45,6 +47,7 @@ export function FeedbackControl({
   const saved = draft.feedback
   const dirty =
     rating !== (saved?.rating ?? null) || note.trim() !== (saved?.note ?? "") || tags.join() !== (saved?.tags ?? []).join()
+  useEffect(() => { onDirtyChange?.(dirty) }, [dirty, onDirtyChange])
   const options = rating === "bad" ? BAD_TAGS : GOOD_TAGS
 
   const pick = (next: "good" | "bad") => {

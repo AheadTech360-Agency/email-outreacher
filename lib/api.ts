@@ -38,10 +38,10 @@ let freshLoad = false
 /** A backend call. `body` is sent as JSON; `csv` as a CSV file's text. */
 export async function api<T>(
   path: string,
-  opts: { workspaceId?: string | null; method?: string; body?: unknown; csv?: string } = {},
+  opts: { workspaceId?: string | null; method?: string; body?: unknown; csv?: string; fresh?: boolean } = {},
 ): Promise<T> {
   if (recording && (opts.method ?? "GET") === "GET") recording.push(`${opts.workspaceId ?? ""} ${path}`)
-  const fresh = freshLoad
+  const fresh = freshLoad || opts.fresh === true
   const token = await accessToken()
   let res: Response
   try {
@@ -88,6 +88,10 @@ export async function apiAll<T>(path: string, workspaceId?: string | null, cap =
 
 /** A background job (backend: routers/jobs.py). Long-running work runs in Coldbrew's worker, not in a request. */
 export interface Job {
+  kind: string
+  createdAt: string
+  startedAt: string | null
+  finishedAt: string | null
   id: string
   label: string
   status: "queued" | "running" | "done" | "failed" | "cancelled"
@@ -109,6 +113,8 @@ export async function runJob<T>(
   onUpdate?: (job: Job) => void,
 ): Promise<T> {
   let job = await api<Job>("/jobs", { workspaceId: opts.workspaceId, method: "POST", body: { path, body: opts.body ?? null } })
+  window.dispatchEvent(new CustomEvent("coldbrew:job-update", { detail: { workspaceId: opts.workspaceId } }))
+  onUpdate?.(job)
   // Checks back often at first (most jobs are short), then every 5 seconds; gives up after 70 minutes,
   // past the worker's own time limit.
   const started = Date.now()
@@ -121,6 +127,7 @@ export async function runJob<T>(
     job = await api<Job>(`/jobs/${job.id}`, { workspaceId: opts.workspaceId })
     onUpdate?.(job)
   }
+  window.dispatchEvent(new CustomEvent("coldbrew:job-update", { detail: { workspaceId: opts.workspaceId } }))
   if (job.status === "done") return job.result as T
   throw new ApiError(job.detail ?? `${job.label} didn't finish.`, job.statusCode ?? 500)
 }
@@ -538,6 +545,7 @@ export const removeUserApi = (id: string) => api<void>(`/users/${id}`, { method:
 // ---------- Stakeholders (Apollo) ----------
 
 export interface Stakeholder {
+  archived: boolean
   id: string
   companyId: string | null
   /** The pipeline company they were found at. */
@@ -678,7 +686,7 @@ export const fetchPosts = (workspaceId: string, leadId?: string) =>
 
 export const fetchLeadPosts = (
   workspaceId: string,
-  body: { leadIds: string[]; maxPosts: number; maxAgeDays: number; sources?: ("linkedin" | "instagram")[] },
+  body: { leadIds: string[]; maxPosts: number; maxAgeDays: number; instagramMaxAgeDays?: number; sources?: ("linkedin" | "instagram")[] },
 ) =>
   runJob<{
     results: {
@@ -705,6 +713,7 @@ export type PipelineStatus = "found" | "review" | "qualified" | "not_fit" | "err
 export type CompanySource = "lead_intel" | "apollo" | "google_maps"
 
 export interface PipelineCompany {
+  archived: boolean
   id: string
   icpId: string | null
   source: CompanySource
@@ -1173,6 +1182,8 @@ export const importPeople = (workspaceId: string, csv: string, icpId: string | n
 
 // ---------- Products: what we sell. Each ICP picks one. ----------
 
+export interface ProductCustomField { key: string; label: string; value: string }
+export interface ProductNote { id: string; body: string }
 export interface ProductFields {
   name: string
   description: string
@@ -1181,9 +1192,12 @@ export interface ProductFields {
   offer: string
   cta: string
   url: string
+  customFields: ProductCustomField[]
+  notes: ProductNote[]
 }
 
 export interface Product extends ProductFields {
+  archived: boolean
   id: string
   createdAt: string
   updatedAt: string
@@ -1659,6 +1673,64 @@ export interface PostGatherResult {
  * as soon as Claude finds enough to write with. */
 export const gatherPosts = (
   workspaceId: string,
-  body: { stakeholderIds?: string[]; companyIds?: string[]; sources: PostSource[]; maxPosts: number; maxAgeDays: number },
+  body: { stakeholderIds?: string[]; companyIds?: string[]; sources: PostSource[]; maxPosts: number; maxAgeDays: number; instagramMaxAgeDays?: number },
   onUpdate?: (job: Job) => void,
 ) => runJob<PostGatherResult>("/posts/gather", { workspaceId, body }, onUpdate)
+
+
+/** Permanently delete records and their dependent workspace data in one transaction. */
+export const deleteRecords = (workspaceId: string, kind: "company" | "person" | "email", ids: string[], noEmailOnly = false) =>
+  api<{ deleted: number }>(`/records/${kind}/delete`, { workspaceId, method: "POST", body: { ids, noEmailOnly } })
+
+export const archiveRecords = (workspaceId: string, kind: "company" | "person" | "product", ids: string[], archived: boolean) =>
+  api<{ changed: number }>(`/records/${kind}/archive`, { workspaceId, method: "POST", body: { ids, archived } })
+
+export const fetchRecentJobs = (workspaceId: string) => api<Job[]>("/jobs", { workspaceId })
+
+export interface CampaignReadiness {
+  id: string; name: string; status: string; timezone: string | null; enrolled: number
+  checks: { key: string; status: "pass" | "fail" | "unknown"; message: string }[]
+  checkedAt: string; blocking: number
+}
+export const fetchCampaignReadiness = (workspaceId: string, id: string) =>
+  api<CampaignReadiness>(`/sending/campaigns/${encodeURIComponent(id)}/readiness`, { workspaceId, fresh: true })
+
+export interface TimelineEvent { id: string; at: string; kind: string; title: string; detail: string; emailId: string | null }
+export const fetchPersonTimeline = (workspaceId: string, personId: string) =>
+  api<{ events: TimelineEvent[] }>(`/records/person/${personId}/timeline`, { workspaceId, fresh: true })
+
+
+export interface ProductSuggestions {
+  summary: string
+  product: ProductFields
+  reasons: {target:string;reason:string}[]
+  costUsd: number
+  promptId: string
+  promptVersion: number
+}
+export const suggestProduct = (workspaceId: string, product: ProductFields, onUpdate?: (job: Job) => void) =>
+  runJob<ProductSuggestions>("/products/suggest", {workspaceId, body:product}, onUpdate)
+
+
+export interface AnalysisMetrics {
+  recipients:number; replied:number; bounced:number; unsubscribed:number; replyRate:number|null; ratedGood:number; ratedBad:number
+}
+export interface AnalysisSnapshot extends AnalysisMetrics {label:string}
+export interface AnalysisFinding {
+  title:string;category:string;confidence:"low"|"medium"|"high";observation:string;evidence:string;recommendation:string;exampleEmailIds:string[]
+}
+export interface AnalysisExample {emailId:string;subject:string;body:string;hook:string;source:string;replied:boolean;rating:string|null;icpId:string|null;prompt:string}
+export interface AnalysisMeta {
+  id:string;start:string;end:string;createdAt:string;filters:{periodKey:string;timezone:string;icpId:string|null};status:string;summary:string
+}
+export interface AnalysisReport extends AnalysisMeta {
+  payload:{
+    version:number;status:string;error:string|null;costUsd:number;prompt:{id:string;version:number;model:string}|null;
+    metrics:AnalysisMetrics;previous:AnalysisMetrics&{start:string;end:string};activity:{drafted:number;awaiting_review:number;approved:number;queued:number};
+    coverage:{currentCapped:boolean;previousCapped:boolean;firstEmailRecordsAnalyzed:number};groups:Record<string,AnalysisSnapshot[]>;examples:AnalysisExample[];method:string;limitations:string[];
+    narrative:{summary:string;findings:AnalysisFinding[];experiments:string[];limitations:string[]}
+  }
+}
+export const fetchAnalysisReports = (workspaceId:string,offset=0) => api<{items:AnalysisMeta[];total:number}>(`/analysis/reports?limit=50&offset=${offset}`,{workspaceId,fresh:true})
+export const fetchAnalysisReport = (workspaceId:string,id:string) => api<AnalysisReport>(`/analysis/reports/${id}`,{workspaceId})
+export const refreshAnalysis = (workspaceId:string,body:{start:string;end:string;periodKey:string;timezone:string;icpId:string|null},onUpdate?:(job:Job)=>void) => runJob<AnalysisReport>("/analysis/refresh",{workspaceId,body},onUpdate)
