@@ -151,9 +151,9 @@ function NewRun({ wsId }: { wsId: string }) {
     !existing && !places.length && "Add a place",
     !existing && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
     !existing && !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
-    !(num("companies") >= 1 && num("companies") <= (existing ? 300 : 100)) && `Companies: 1 to ${existing ? 300 : 100}`,
+    !(num("companies") >= 1 && num("companies") <= (existing ? 2000 : 100)) && `Companies: 1 to ${existing ? "2,000" : 100}`,
     !(num("people") >= 1 && num("people") <= 10) && "People per company: 1 to 10",
-    !(num("leads") >= 1 && num("leads") <= 300) && "Most leads: 1 to 300",
+    !(num("leads") >= 1 && num("leads") <= 2000) && "Most leads: 1 to 2,000",
     !(num("posts") >= 0 && num("posts") <= 20) && "Posts per lead: 0 to 20",
     !(limit > 0 && limit <= 500) && "Spend limit: above $0, up to $500",
   ].filter(Boolean) as string[]
@@ -282,7 +282,7 @@ function NewRun({ wsId }: { wsId: string }) {
               num("requests") < requestsNeeded,
             )}
           {existing
-            ? number("companies", "Companies", "Up to 300 a run. The rest wait for the next one.")
+            ? number("companies", "Companies", "Up to 2,000 a run. The rest wait for the next one.")
             : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
           {number("people", "People per company", existing ? "Those with an email first." : "Found on LinkedIn.")}
           {number("leads", "Most emails", "People who get an email.")}
