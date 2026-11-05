@@ -224,7 +224,7 @@ function CampaignsCard({ fallback }: { fallback: Mailboxes["campaigns"] }) {
       const say = made.length ? `${made.length} set up: ${made.map((x) => x.icp).join(", ")}.` : "Every ICP already had its campaign."
       ;(skipped.length ? toast.warning : toast.success)(say, {
         id,
-        description: skipped.length ? skipped.map((x) => `${x.icp}: ${x.note}`).join(" ") : "New campaigns stay in draft. Nothing sends until you activate one in CheapSequencer.",
+        description: skipped.length ? skipped.map((x) => `${x.icp}: ${x.note}`).join(" ") : "New campaigns stay in draft until you queue approved emails into them, which starts sending.",
       })
       sending.reload()
     } catch (e) {

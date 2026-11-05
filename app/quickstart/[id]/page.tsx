@@ -318,9 +318,11 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
     try {
       const r = await queueEmails(wsId, ids, includeRisky ? risky.map((d) => d.id) : [])
       const skipped = r.results.filter((x) => x.status === "skipped")
+      const warnings = [...new Set(r.results.filter((x) => x.status === "queued" && x.reason).map((x) => x.reason))].join(" ")
+      if (warnings) toast.warning("Queued, but the campaign needs attention", { description: warnings })
       if (r.queued)
         toast.success(`${r.queued} queued in CheapSequencer`, {
-          description: `Nothing sends until the campaign is activated there.${skipped.length ? ` ${skipped.length} skipped: ${[...new Set(skipped.map((x) => x.reason))].slice(0, 2).join(" ")}` : ""}`,
+          description: `Sending has started on the campaign's schedule.${skipped.length ? ` ${skipped.length} skipped: ${[...new Set(skipped.map((x) => x.reason))].slice(0, 2).join(" ")}` : ""}`,
         })
       else toast.error("None were queued", { description: [...new Set(skipped.map((x) => x.reason))].slice(0, 2).join(" ") || undefined })
     } catch (e) {
@@ -415,7 +417,7 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
         open={confirming}
         onOpenChange={setConfirming}
         title={`Queue ${approved.length - (includeRisky ? 0 : risky.length)} approved emails?`}
-        description="Each lead goes into the ICP's campaign in CheapSequencer. Nothing sends until you activate the campaign there."
+        description="This starts sending. Each lead goes into the ICP's campaign in CheapSequencer and their first email goes out on the campaign's schedule. A paused campaign stays paused."
         confirmLabel="Queue them"
         onConfirm={() => {
           setConfirming(false)

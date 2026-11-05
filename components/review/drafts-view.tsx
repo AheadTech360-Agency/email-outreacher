@@ -61,11 +61,13 @@ async function queue(wsId: string, ids: string[], riskyOk: string[] = []) {
   try {
     const r = await queueEmails(wsId, ids, riskyOk)
     const skipped = r.results.filter((x) => x.status === "skipped")
+    const warnings = [...new Set(r.results.filter((x) => x.status === "queued" && x.reason).map((x) => x.reason))].join(" ")
+    if (warnings) toast.warning("Queued, but the campaign needs attention", { description: warnings })
     const reasons = [...new Set(skipped.map((x) => x.reason))].slice(0, 3).join(" ")
     if (r.queued)
       toast.success(`${r.queued} queued in CheapSequencer`, {
         id,
-        description: `Nothing sends until the campaign is activated there.${skipped.length ? ` ${skipped.length} skipped: ${reasons}` : ""}`,
+        description: `Sending has started on the campaign's schedule.${skipped.length ? ` ${skipped.length} skipped: ${reasons}` : ""}`,
       })
     else toast.error("None were queued", { id, description: reasons || undefined })
     return r.queued > 0
@@ -190,7 +192,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
         open={confirming}
         onOpenChange={setConfirming}
         title={`Queue ${toQueue} approved email${toQueue === 1 ? "" : "s"}?`}
-        description="This queues all approved emails in the current ICP or workspace, including those outside your search. Each lead goes into their ICP's campaign in CheapSequencer, with generic follow-ups that Coldbrew personalizes just before they're due. Nothing sends until you activate the campaign there. Queued emails can't be edited here."
+        description="This queues all approved emails in the current ICP or workspace, including those outside your search. Each lead goes into their ICP's campaign in CheapSequencer, with generic follow-ups that Coldbrew personalizes just before they're due. This starts sending: their first emails go out on the campaign's schedule. A paused campaign stays paused. Queued emails can't be edited here."
         confirmLabel="Queue them"
         onConfirm={() => {
           setConfirming(false)
@@ -449,7 +451,7 @@ function DraftSheet({
           <p className="text-xs text-muted-foreground">
             {draft.status === "queued"
               ? "Queued in its ICP's CheapSequencer campaign. Follow-ups are written just before they're due, only if there's no reply."
-              : "Approving marks it ready. Queueing puts it in CheapSequencer; nothing sends until you activate the campaign there."}
+              : "Approving marks it ready. Queueing sends it: it goes into CheapSequencer and out on the campaign's schedule."}
           </p>
         </section>
 

@@ -25,7 +25,7 @@ export function CampaignReadinessPanel({ wsId, campaignId }: { wsId: string; cam
         {item.status === "pass" ? <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-positive" /> : item.status === "fail" ? <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" /> : <CircleHelp className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />}
         <span><span className="sr-only">{item.status === "pass" ? "Passed: " : item.status === "fail" ? "Needs attention: " : "Not verified: "}</span>{item.message}</span>
       </li>)}</ul>
-      <p className="text-xs text-muted-foreground">Read-only check at {new Date(data.checkedAt).toLocaleTimeString()}. Activating a campaign in CheapSequencer sends to every enrolled lead on its schedule. Coldbrew never activates one.</p>
+      <p className="text-xs text-muted-foreground">Read-only check at {new Date(data.checkedAt).toLocaleTimeString()}. Queueing approved emails starts a draft campaign, and it sends to every enrolled lead on its schedule. A paused campaign stays paused.</p>
     </div>}
   </div>
 }
