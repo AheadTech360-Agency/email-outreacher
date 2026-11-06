@@ -26,7 +26,13 @@ export function RepliesView() {
 function Replies({ wsId }: { wsId: string }) {
   const threads = useApi(() => fetchReplies(wsId), [wsId])
   const [openId, setOpenId] = useState<string | null>(null)
-  const [query, setQuery] = useState("")
+  // From the reply email's link (/replies?open=<their address>): the list starts searched for them, and their
+  // conversation opens once it's loaded (until it's closed).
+  const [linked] = useState(() =>
+    typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("open") ?? "").trim().toLowerCase(),
+  )
+  const [linkClosed, setLinkClosed] = useState(false)
+  const [query, setQuery] = useState(linked)
   const [extra, setExtra] = useState<Record<string, string>>({})
 
   if (threads.error && !threads.data) return <BackendError message={threads.error} onRetry={threads.reload} />
@@ -37,7 +43,10 @@ function Replies({ wsId }: { wsId: string }) {
     (!extra.mailbox || extra.mailbox === "all" || t.mailbox === extra.mailbox) &&
     (!extra.classification || extra.classification === "all" || (t.classification || "unclassified") === extra.classification) &&
     presenceMatches(t.unreadCount, extra.unread) && recentMatches(t.lastMessageAt, extra.date))
-  const open = threads.data.find((t) => t.id === openId) ?? null
+  const open =
+    threads.data.find((t) => t.id === openId) ??
+    (linked && !linkClosed ? threads.data.find((t) => t.leadEmail?.toLowerCase() === linked) : undefined) ??
+    null
 
   return (
     <div className="space-y-4">
@@ -93,7 +102,7 @@ function Replies({ wsId }: { wsId: string }) {
         </ul>
       )}
 
-      {open && <ThreadSheet wsId={wsId} thread={open} onClose={() => setOpenId(null)} />}
+      {open && <ThreadSheet wsId={wsId} thread={open} onClose={() => (setOpenId(null), setLinkClosed(true))} />}
     </div>
   )
 }
