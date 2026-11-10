@@ -317,3 +317,39 @@ export interface OwnSettingsOut extends OwnSettings {
 
 export const fetchOwnSettings = (ws: string) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws })
 export const saveOwnSettings = (ws: string, body: OwnSettings) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws, method: "PUT", body })
+
+// ---------- Social accounts (LinkedIn and Instagram through Unipile) ----------
+
+export type SocialProvider = "linkedin" | "instagram"
+export type SocialStatus = "ok" | "connecting" | "credentials" | "permissions" | "error" | "stopped"
+
+export interface SocialAccount {
+  id: string
+  provider: SocialProvider
+  name: string
+  username: string
+  status: SocialStatus
+  /** The mailbox it belongs to. */
+  senderAccountId: string | null
+  senderEmail: string | null
+  lastSyncedAt: string | null
+  createdAt: string
+}
+
+export interface SocialList {
+  /** UNIPILE_DSN and UNIPILE_API_KEY are set on the backend. */
+  configured: boolean
+  /** Unipile can report a new account straight away (PUBLIC_API_URL); otherwise Sync picks it up. */
+  notified: boolean
+  accounts: SocialAccount[]
+}
+
+export const fetchSocial = (ws: string) => api<SocialList>("/social-accounts", { workspaceId: ws })
+export const connectSocial = (ws: string, provider: SocialProvider, returnUrl: string) =>
+  api<{ url: string }>("/social-accounts/connect", { workspaceId: ws, method: "POST", body: { provider, returnUrl } })
+export const reconnectSocial = (ws: string, id: string, returnUrl: string) =>
+  api<{ url: string }>(`/social-accounts/${id}/reconnect?returnUrl=${encodeURIComponent(returnUrl)}`, { workspaceId: ws, method: "POST" })
+export const syncSocial = (ws: string) => api<SocialList>("/social-accounts/sync", { workspaceId: ws, method: "POST" })
+export const linkSocial = (ws: string, id: string, senderAccountId: string | null) =>
+  api<SocialAccount>(`/social-accounts/${id}`, { workspaceId: ws, method: "PATCH", body: { senderAccountId } })
+export const disconnectSocial = (ws: string, id: string) => api<void>(`/social-accounts/${id}`, { workspaceId: ws, method: "DELETE" })

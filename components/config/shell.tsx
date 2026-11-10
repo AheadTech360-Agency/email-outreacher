@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, type CSSProperties, type ReactNode } from "react"
-import { Activity, ArrowUpLeft, Check, Flame, ChevronsUpDown, CircleUserRound, Gauge, LogOut, Mailbox, Moon, PanelLeftClose, Send, Settings, Sun, UserRoundPen, type LucideIcon } from "lucide-react"
+import { Activity, ArrowUpLeft, Check, Flame, ChevronsUpDown, CircleUserRound, Gauge, LogOut, Mailbox, Moon, PanelLeftClose, Send, Settings, Share2, Sun, UserRoundPen, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { DispatchMark } from "@/components/config/dispatch-mark"
 import { Button } from "@/components/ui/button"
@@ -44,6 +44,7 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/senders", label: "Sending accounts", icon: Mailbox },
   { href: "/warming", label: "Warming accounts", icon: Flame },
+  { href: "/social", label: "Social accounts", icon: Share2 },
   { href: "/personas", label: "Personas", icon: UserRoundPen },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
