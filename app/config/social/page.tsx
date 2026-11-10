@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Briefcase, Camera, MoreHorizontal, Plug, RefreshCw, RotateCcw, Unplug, type LucideIcon } from "lucide-react"
+import { Briefcase, Camera, Gauge, MoreHorizontal, Plug, RefreshCw, RotateCcw, Unplug, type LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { LoadError } from "@/components/config/load-error"
 import { Page } from "@/components/config/shell"
@@ -16,6 +16,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -32,6 +35,7 @@ import {
   fetchSocial,
   linkSocial,
   reconnectSocial,
+  setSocialLimits,
   syncSocial,
   useApi,
 } from "@/lib/config-api"
@@ -62,6 +66,7 @@ export default function SocialAccountsPage() {
   const [busy, setBusy] = useState<string | null>(null)
   const [awaiting, setAwaiting] = useState(false)
   const [removing, setRemoving] = useState<SocialAccount | null>(null)
+  const [limiting, setLimiting] = useState<SocialAccount | null>(null)
 
   const data = social.data
   const accounts = data?.accounts ?? []
@@ -119,6 +124,19 @@ export default function SocialAccountsPage() {
       toast.success(saved.senderEmail ? `${a.name || a.username} belongs to ${saved.senderEmail}` : `${a.name || a.username} belongs to no mailbox`)
     } catch (e) {
       toast.error("Couldn't change it", { description: errorText(e) })
+    }
+  }
+
+  const saveLimits = async (a: SocialAccount, limits: { dailyInviteLimit?: number | null; dailyMessageLimit?: number | null }) => {
+    if (!workspaceId) return false
+    try {
+      const saved = await setSocialLimits(workspaceId, a.id, limits)
+      setAccounts(accounts.map((x) => (x.id === a.id ? saved : x)))
+      toast.success(`Limits saved for ${a.name || a.username}`, { description: limitsText(saved) })
+      return true
+    } catch (e) {
+      toast.error("Couldn't save the limits", { description: errorText(e) })
+      return false
     }
   }
 
@@ -190,12 +208,15 @@ export default function SocialAccountsPage() {
               manager={manager}
               configured={data.configured}
               onLink={link}
+              onLimits={setLimiting}
               onReconnect={(a) => workspaceId && void openSignIn(a.id, () => reconnectSocial(workspaceId, a.id, here))}
               onDisconnect={setRemoving}
             />
           ))}
         </div>
       )}
+
+      <LimitsDialog account={limiting} onClose={() => setLimiting(null)} onSave={saveLimits} />
 
       <AlertDialog open={!!removing} onOpenChange={(open) => !open && setRemoving(null)}>
         <AlertDialogContent>
@@ -227,13 +248,93 @@ function Notice({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Network({ provider, accounts, mailboxes, manager, configured, onLink, onReconnect, onDisconnect }: {
+function limitsText(a: SocialAccount) {
+  return a.provider === "linkedin"
+    ? `${a.invitesPerDay} connection requests (${a.invitesPerWeek} a week) and ${a.messagesPerDay} messages a day`
+    : `${a.messagesPerDay} messages a day`
+}
+
+/** An account's own daily limits. Empty: the workspace's for its network, from Settings. */
+function LimitsDialog({ account, onClose, onSave }: {
+  account: SocialAccount | null
+  onClose: () => void
+  onSave: (a: SocialAccount, limits: { dailyInviteLimit?: number | null; dailyMessageLimit?: number | null }) => Promise<boolean>
+}) {
+  const [invites, setInvites] = useState("")
+  const [messages, setMessages] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [shown, setShown] = useState<string | null>(null)
+  if (account && shown !== account.id) {
+    setShown(account.id)
+    setInvites(account.dailyInviteLimit === null ? "" : String(account.dailyInviteLimit))
+    setMessages(account.dailyMessageLimit === null ? "" : String(account.dailyMessageLimit))
+    setError(null)
+  }
+  const linkedin = account?.provider === "linkedin"
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!account || busy) return
+    const inv = invites ? Number(invites) : null
+    const msg = messages ? Number(messages) : null
+    if (inv !== null && (inv < 1 || inv > 100)) return setError("Connection requests a day: between 1 and 100.")
+    if (msg !== null && (msg < 1 || msg > 250)) return setError("Messages a day: between 1 and 250.")
+    setBusy(true)
+    const ok = await onSave(account, linkedin ? { dailyInviteLimit: inv, dailyMessageLimit: msg } : { dailyMessageLimit: msg })
+    setBusy(false)
+    if (ok) {
+      setShown(null)
+      onClose()
+    }
+  }
+
+  return (
+    <Dialog open={!!account} onOpenChange={(open) => !open && (setShown(null), onClose())}>
+      <DialogContent>
+        <form onSubmit={submit} noValidate className="space-y-5">
+          <DialogHeader>
+            <DialogTitle>Limits for {account?.name || account?.username}</DialogTitle>
+            <DialogDescription>Leave a box empty to use this workspace&apos;s limit for {linkedin ? "LinkedIn" : "Instagram"}, set in Settings.</DialogDescription>
+          </DialogHeader>
+          {linkedin && (
+            <div className="space-y-1.5">
+              <Label htmlFor="own-invites">Connection requests a day</Label>
+              <Input id="own-invites" inputMode="numeric" placeholder="Workspace's" value={invites} onChange={(e) => setInvites(e.target.value.replace(/\D/g, ""))} />
+              <p className="text-[12.5px] text-muted-foreground">The workspace&apos;s weekly limit ({account?.invitesPerWeek}) still applies.</p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="own-messages">Messages a day</Label>
+            <Input id="own-messages" inputMode="numeric" placeholder="Workspace's" value={messages} onChange={(e) => setMessages(e.target.value.replace(/\D/g, ""))} />
+          </div>
+          {error && (
+            <p role="alert" className="text-[13px] text-negative">
+              {error}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => (setShown(null), onClose())}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : "Save limits"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function Network({ provider, accounts, mailboxes, manager, configured, onLink, onLimits, onReconnect, onDisconnect }: {
   provider: SocialProvider
   accounts: SocialAccount[]
   mailboxes: Sender[]
   manager: boolean
   configured: boolean
   onLink: (a: SocialAccount, senderId: string) => void
+  onLimits: (a: SocialAccount) => void
   onReconnect: (a: SocialAccount) => void
   onDisconnect: (a: SocialAccount) => void
 }) {
@@ -260,6 +361,10 @@ function Network({ provider, accounts, mailboxes, manager, configured, onLink, o
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-medium">{a.name || a.username}</p>
                   {a.username && <p className="truncate text-[12.5px] text-muted-foreground">@{a.username}</p>}
+                  <p className="truncate text-[12.5px] text-muted-foreground tabular-nums">
+                    {limitsText(a)}
+                    {(a.dailyInviteLimit !== null || a.dailyMessageLimit !== null) && " (its own)"}
+                  </p>
                 </div>
                 <div className="col-start-1 md:col-start-auto">
                   <span className={cn("inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[12px] font-medium whitespace-nowrap", status.className)}>
@@ -292,6 +397,9 @@ function Network({ provider, accounts, mailboxes, manager, configured, onLink, o
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="min-w-48">
+                        <DropdownMenuItem onSelect={() => onLimits(a)}>
+                          <Gauge /> Set limits
+                        </DropdownMenuItem>
                         <DropdownMenuItem disabled={!configured} onSelect={() => onReconnect(a)}>
                           <RotateCcw /> Sign in again
                         </DropdownMenuItem>

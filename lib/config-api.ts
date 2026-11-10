@@ -307,6 +307,13 @@ export interface OwnSettings {
   warmupDefaultTarget: number
   warmupDefaultReplyPercent: number
   warmupStarPercent: number
+  /** LinkedIn and Instagram, per account, unless the account has its own. */
+  linkedinDailyInvites: number
+  linkedinWeeklyInvites: number
+  linkedinDailyMessages: number
+  instagramDailyMessages: number
+  socialMinGapMinutes: number
+  socialMaxGapMinutes: number
 }
 
 /** Plus the server's switches: off, everything is a dry run, whatever the settings say. */
@@ -332,6 +339,13 @@ export interface SocialAccount {
   /** The mailbox it belongs to. */
   senderAccountId: string | null
   senderEmail: string | null
+  /** Its own limits; null uses the workspace's for its network (Settings). */
+  dailyInviteLimit: number | null
+  dailyMessageLimit: number | null
+  /** What applies to it. Instagram has no connection requests (0). */
+  invitesPerDay: number
+  invitesPerWeek: number
+  messagesPerDay: number
   lastSyncedAt: string | null
   createdAt: string
 }
@@ -352,4 +366,7 @@ export const reconnectSocial = (ws: string, id: string, returnUrl: string) =>
 export const syncSocial = (ws: string) => api<SocialList>("/social-accounts/sync", { workspaceId: ws, method: "POST" })
 export const linkSocial = (ws: string, id: string, senderAccountId: string | null) =>
   api<SocialAccount>(`/social-accounts/${id}`, { workspaceId: ws, method: "PATCH", body: { senderAccountId } })
+/** null puts a limit back to the workspace's. */
+export const setSocialLimits = (ws: string, id: string, limits: { dailyInviteLimit?: number | null; dailyMessageLimit?: number | null }) =>
+  api<SocialAccount>(`/social-accounts/${id}`, { workspaceId: ws, method: "PATCH", body: limits })
 export const disconnectSocial = (ws: string, id: string) => api<void>(`/social-accounts/${id}`, { workspaceId: ws, method: "DELETE" })

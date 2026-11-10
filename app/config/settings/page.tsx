@@ -28,7 +28,7 @@ export default function SettingsPage() {
   const { workspaceId } = useSession()
   const settings = useApi(() => (workspaceId ? fetchOwnSettings(workspaceId) : Promise.resolve(null)), [workspaceId])
   return (
-    <Page title="Settings" description="This workspace's sending limits and how its mailboxes warm up. Each mailbox keeps its own daily limit or warm-up target; new ones start from these.">
+    <Page title="Settings" description="This workspace's sending limits, how its mailboxes warm up, and LinkedIn and Instagram limits. Mailboxes and social accounts can each have their own; new ones start from these.">
       {settings.error && !settings.data ? (
         <LoadError message={settings.error} onRetry={settings.reload} />
       ) : !settings.data || !workspaceId ? (
@@ -62,6 +62,8 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
     if (v.minGapMinutes > v.maxGapMinutes) return setError("The shortest gap between sends can't be longer than the longest.")
     if (v.warmupStart >= v.warmupEnd) return setError("The warm-up window must start before it ends.")
     if (!v.warmupDays.length) return setError("Pick at least one day for warm-up.")
+    if (v.linkedinDailyInvites > v.linkedinWeeklyInvites) return setError("LinkedIn connection requests a day can't be more than a week.")
+    if (v.socialMinGapMinutes > v.socialMaxGapMinutes) return setError("The shortest gap between LinkedIn and Instagram actions can't be longer than the longest.")
     setError(null)
     setBusy(true)
     try {
@@ -182,6 +184,31 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
         </div>
       </Card>
 
+      <Card title="LinkedIn and Instagram" status="Limits for each connected account. Each account on the Social accounts page can have its own.">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Field id="li-invites" label="LinkedIn connection requests a day" hint="Per account. LinkedIn restricts accounts that send too many.">
+            <Input id="li-invites" inputMode="numeric" value={String(v.linkedinDailyInvites)} disabled={!manager} onChange={num("linkedinDailyInvites")} />
+          </Field>
+          <Field id="li-week" label="LinkedIn connection requests a week" hint="Per account, whatever the daily number.">
+            <Input id="li-week" inputMode="numeric" value={String(v.linkedinWeeklyInvites)} disabled={!manager} onChange={num("linkedinWeeklyInvites")} />
+          </Field>
+          <Field id="li-messages" label="LinkedIn messages a day" hint="Per account, to people already connected.">
+            <Input id="li-messages" inputMode="numeric" value={String(v.linkedinDailyMessages)} disabled={!manager} onChange={num("linkedinDailyMessages")} />
+          </Field>
+          <Field id="ig-messages" label="Instagram messages a day" hint="Per account.">
+            <Input id="ig-messages" inputMode="numeric" value={String(v.instagramDailyMessages)} disabled={!manager} onChange={num("instagramDailyMessages")} />
+          </Field>
+        </div>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+          <Field id="s-gap-min" label="Gap between actions, from" hint="Minutes between one account's requests and messages, picked at random…">
+            <Input id="s-gap-min" inputMode="numeric" value={String(v.socialMinGapMinutes)} disabled={!manager} onChange={num("socialMinGapMinutes")} />
+          </Field>
+          <Field id="s-gap-max" label="to" hint="…between these two.">
+            <Input id="s-gap-max" inputMode="numeric" value={String(v.socialMaxGapMinutes)} disabled={!manager} onChange={num("socialMaxGapMinutes")} />
+          </Field>
+        </div>
+      </Card>
+
       {manager && (
         <div className="sticky bottom-0 -mx-1 flex flex-wrap items-center justify-end gap-3 rounded-xl border bg-card/95 px-4 py-3 backdrop-blur">
           {error ? (
@@ -203,14 +230,21 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
   )
 }
 
-function Card({ title, live, liveName, aside, children }: { title: string; live: boolean; liveName: string; aside: ReactNode; children: ReactNode }) {
+function Card({ title, live, liveName, status, aside, children }: {
+  title: string
+  live?: boolean
+  liveName?: string
+  status?: string
+  aside?: ReactNode
+  children: ReactNode
+}) {
   return (
     <section className="space-y-5 rounded-xl border bg-card p-5 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-[16px] font-semibold">{title}</h2>
           <p className="text-[12.5px] text-muted-foreground">
-            {live ? "Live: emails go out for real." : `Dry run: nothing goes out until ${liveName} is turned on in Railway.`}
+            {status ?? (live ? "Live: emails go out for real." : `Dry run: nothing goes out until ${liveName} is turned on in Railway.`)}
           </p>
         </div>
         {aside}
