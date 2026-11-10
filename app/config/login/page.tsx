@@ -1,5 +1,6 @@
 "use client"
 
+import { safeNext } from "@/lib/safe-next"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, type FormEvent } from "react"
 import { DispatchLanes } from "@/components/config/dispatch-lanes"
@@ -19,9 +20,7 @@ export default function LoginPage() {
 
   // Only a path on this app: never an address elsewhere.
   const next = () => {
-    const home = href("/")
-    const to = new URLSearchParams(window.location.search).get("next") ?? home
-    return to.startsWith("/") && !to.startsWith("//") ? to : home
+    return safeNext(new URLSearchParams(window.location.search).get("next"), href("/"))
   }
 
   useEffect(() => {

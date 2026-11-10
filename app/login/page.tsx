@@ -1,5 +1,6 @@
 "use client"
 
+import { safeNext } from "@/lib/safe-next"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Suspense, useEffect, useState } from "react"
 import { AuthShell } from "@/components/auth-shell"
@@ -22,7 +23,7 @@ function Login() {
   const { session, signIn } = useAuth()
   const router = useRouter()
   const params = useSearchParams()
-  const next = params.get("next")?.startsWith("/") ? params.get("next")! : "/home"
+  const next = safeNext(params.get("next"), "/home")
   // Adding another account: the current one stays signed in on this browser until you switch back.
   const adding = params.get("add") === "1"
   const [email, setEmail] = useState("")
