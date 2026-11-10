@@ -227,7 +227,15 @@ export function MailboxPage({ pool }: { pool: Pool }) {
                       </>
                     ) : (
                       <>
-                        <Meter value={s.warmupSentToday} max={Math.max(1, s.warmupTargetToday)} label={`${s.warmupSentToday} of ${s.warmupTargetToday}`} />
+                        <Meter
+                          value={s.warmupSentToday}
+                          max={Math.max(1, s.warmupTargetToday)}
+                          label={
+                            s.warmupTargetToday < s.warmupDailyTarget
+                              ? `${s.warmupSentToday} of ${s.warmupTargetToday}, working up to ${s.warmupDailyTarget} a day`
+                              : `${s.warmupSentToday} of ${s.warmupDailyTarget} a day`
+                          }
+                        />
                         <Meter
                           value={Math.round((s.warmupInboxRate7d ?? 0) * 100)}
                           max={100}

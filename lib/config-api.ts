@@ -307,6 +307,9 @@ export interface OwnSettings {
   warmupDefaultTarget: number
   warmupDefaultReplyPercent: number
   warmupStarPercent: number
+  /** Warm-up's own limits, apart from sending's. null: no cap. */
+  warmupWorkspaceDailyCap: number | null
+  warmupMinGapMinutes: number
   /** LinkedIn and Instagram, per account, unless the account has its own. */
   linkedinDailyInvites: number
   linkedinWeeklyInvites: number
@@ -324,6 +327,9 @@ export interface OwnSettingsOut extends OwnSettings {
 
 export const fetchOwnSettings = (ws: string) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws })
 export const saveOwnSettings = (ws: string, body: OwnSettings) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws, method: "PUT", body })
+/** Every warming mailbox in the workspace gets this many warm-up emails a day. */
+export const warmupTargetToAll = (ws: string, warmupDailyTarget: number) =>
+  api<{ updated: number }>("/own-sending/settings/warmup-target-to-all", { workspaceId: ws, method: "POST", body: { warmupDailyTarget } })
 
 // ---------- Social accounts (LinkedIn and Instagram through Unipile) ----------
 

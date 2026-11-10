@@ -5,12 +5,13 @@ import { toast } from "sonner"
 import { LoadError } from "@/components/config/load-error"
 import { Page } from "@/components/config/shell"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
-import { type OwnSettings, type OwnSettingsOut, canManage, errorText, fetchOwnSettings, saveOwnSettings, useApi } from "@/lib/config-api"
+import { type OwnSettings, type OwnSettingsOut, canManage, errorText, fetchOwnSettings, saveOwnSettings, useApi, warmupTargetToAll } from "@/lib/config-api"
 import { useSession } from "@/lib/config-session"
 import { cn } from "@/lib/utils"
 
@@ -48,13 +49,15 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
   const manager = canManage(me?.role)
   const [v, setV] = useState<OwnSettings>(initial)
   const [cap, setCap] = useState(initial.workspaceDailyCap === null ? "" : String(initial.workspaceDailyCap))
+  const [warmCap, setWarmCap] = useState(initial.warmupWorkspaceDailyCap === null ? "" : String(initial.warmupWorkspaceDailyCap))
+  const [applyAll, setApplyAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const set = <K extends keyof OwnSettings>(key: K, value: OwnSettings[K]) => setV((cur) => ({ ...cur, [key]: value }))
   const num = (key: keyof OwnSettings) => (e: React.ChangeEvent<HTMLInputElement>) => set(key, Number(e.target.value.replace(/\D/g, "") || 0) as never)
   // Unsaved changes: what's on screen against what was loaded, compared field by field (the live switches aren't settings).
-  const current: OwnSettings = { ...v, workspaceDailyCap: cap ? Number(cap) : null }
-  const dirty = (Object.keys(current) as (keyof OwnSettings)[]).some((k) => JSON.stringify(current[k]) !== JSON.stringify(initial[k]))
+  const current: OwnSettings = { ...v, workspaceDailyCap: cap ? Number(cap) : null, warmupWorkspaceDailyCap: warmCap ? Number(warmCap) : null }
+  const dirty = applyAll || (Object.keys(current) as (keyof OwnSettings)[]).some((k) => JSON.stringify(current[k]) !== JSON.stringify(initial[k]))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -67,9 +70,14 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
     setError(null)
     setBusy(true)
     try {
-      const saved = await saveOwnSettings(wsId, { ...v, workspaceDailyCap: cap ? Number(cap) : null })
+      const saved = await saveOwnSettings(wsId, current)
+      let note = "The next sending and warm-up run uses them."
+      if (applyAll) {
+        const { updated } = await warmupTargetToAll(wsId, current.warmupDefaultTarget)
+        note = `${updated} warming ${updated === 1 ? "mailbox is" : "mailboxes are"} now set to ${current.warmupDefaultTarget} warm-up emails a day.`
+      }
       onSaved(saved)
-      toast.success("Settings saved", { description: "The next sending and warm-up run uses them." })
+      toast.success("Settings saved", { description: note })
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -92,7 +100,7 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
       >
         {v.sendingPaused && <p className="text-[13px] text-warning">Every campaign in this workspace is held: nothing is sent until you turn this back on.</p>}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-          <Field id="default-limit" label="Daily limit for new mailboxes" hint="Each mailbox can be changed on its own.">
+          <Field id="default-limit" label="Campaign emails a day, per sending mailbox" hint="For new sending mailboxes. Each one can be changed on its own.">
             <Input id="default-limit" inputMode="numeric" value={String(v.defaultDailyLimit)} disabled={!manager} onChange={num("defaultDailyLimit")} />
           </Field>
           <Field id="cap" label="Workspace daily cap" hint="All mailboxes together. Empty: no cap.">
@@ -165,16 +173,38 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
             </div>
           </fieldset>
         </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
-          <Field id="w-start-per-day" label="Emails on day one" hint="A new warming mailbox starts here…">
-            <Input id="w-start-per-day" inputMode="numeric" value={String(v.warmupStartPerDay)} disabled={!manager} onChange={num("warmupStartPerDay")} />
-          </Field>
-          <Field id="w-ramp" label="Added each day" hint="…and adds this many a day up to its target.">
-            <Input id="w-ramp" inputMode="numeric" value={String(v.warmupRampPerDay)} disabled={!manager} onChange={num("warmupRampPerDay")} />
-          </Field>
-          <Field id="w-target" label="Daily target for new mailboxes" hint="Each mailbox can be changed on its own.">
-            <Input id="w-target" inputMode="numeric" value={String(v.warmupDefaultTarget)} disabled={!manager} onChange={num("warmupDefaultTarget")} />
-          </Field>
+        <fieldset className="space-y-4 rounded-lg border border-dashed p-4">
+          <legend className="px-1 text-[14px] font-semibold">Warm-up limits</legend>
+          <p className="-mt-1 text-[12.5px] text-muted-foreground">Apart from sending limits: warm-up emails never count against a mailbox&apos;s sending limit, and sending never uses these.</p>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-2">
+              <Field id="w-target" label="Warm-up emails a day, per mailbox" hint="A warming mailbox works up to this. Each one can be changed on its own.">
+                <Input id="w-target" inputMode="numeric" value={String(v.warmupDefaultTarget)} disabled={!manager} onChange={num("warmupDefaultTarget")} />
+              </Field>
+              {manager && (
+                <label className="flex items-start gap-2 text-[13px]">
+                  <Checkbox checked={applyAll} onCheckedChange={(on) => setApplyAll(on === true)} className="mt-0.5" />
+                  <span>Also set every current warming mailbox to this</span>
+                </label>
+              )}
+            </div>
+            <Field id="w-cap" label="Workspace warm-up cap a day" hint="All warming mailboxes together. Empty: no cap.">
+              <Input id="w-cap" inputMode="numeric" placeholder="No cap" value={warmCap} disabled={!manager} onChange={(e) => setWarmCap(e.target.value.replace(/\D/g, ""))} />
+            </Field>
+            <Field id="w-gap" label="Shortest gap between warm-up emails" hint="Minutes, for each mailbox.">
+              <Input id="w-gap" inputMode="numeric" value={String(v.warmupMinGapMinutes)} disabled={!manager} onChange={num("warmupMinGapMinutes")} />
+            </Field>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <Field id="w-start-per-day" label="Warm-up emails on day one" hint="A new warming mailbox starts here…">
+              <Input id="w-start-per-day" inputMode="numeric" value={String(v.warmupStartPerDay)} disabled={!manager} onChange={num("warmupStartPerDay")} />
+            </Field>
+            <Field id="w-ramp" label="Added each day" hint="…and adds this many a day until it reaches its daily number.">
+              <Input id="w-ramp" inputMode="numeric" value={String(v.warmupRampPerDay)} disabled={!manager} onChange={num("warmupRampPerDay")} />
+            </Field>
+          </div>
+        </fieldset>
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           <Field id="w-reply" label="Reply to (%) for new mailboxes" hint="The share of warm-up emails it answers.">
             <Input id="w-reply" inputMode="numeric" value={String(v.warmupDefaultReplyPercent)} disabled={!manager} onChange={num("warmupDefaultReplyPercent")} />
           </Field>
@@ -218,7 +248,13 @@ function SettingsForm({ wsId, initial, onSaved }: { wsId: string; initial: OwnSe
           ) : (
             dirty && <p className="mr-auto text-[13px] text-muted-foreground">Unsaved changes</p>
           )}
-          <Button type="button" variant="ghost" disabled={!dirty || busy} onClick={() => (setV(initial), setCap(initial.workspaceDailyCap === null ? "" : String(initial.workspaceDailyCap)), setError(null))}>
+          <Button type="button" variant="ghost" disabled={!dirty || busy} onClick={() => (
+              setV(initial),
+              setCap(initial.workspaceDailyCap === null ? "" : String(initial.workspaceDailyCap)),
+              setWarmCap(initial.warmupWorkspaceDailyCap === null ? "" : String(initial.warmupWorkspaceDailyCap)),
+              setApplyAll(false),
+              setError(null)
+            )}>
             Discard
           </Button>
           <Button type="submit" disabled={!dirty || busy}>
