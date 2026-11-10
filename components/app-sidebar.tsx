@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useState, type CSSProperties } from "react"
-import { ChartNoAxesCombined, Building2, Calculator, House, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
+import { ArrowUpRight, ChartNoAxesCombined, Building2, Calculator, House, Check, ChevronDown, ChevronsUpDown, CircleUserRound, FileText, FolderPlus, Gauge, Inbox, KeyRound, ListTree, LogOut, Mail, Mails, MessageSquareText, Moon, Package, PanelLeftClose, Reply, Rocket, Send, Settings, Sun, Target, UserCog, UserPlus, UserSearch, Users, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { BackgroundActivity } from "@/components/background-activity"
 import { toast } from "sonner"
@@ -39,6 +39,10 @@ import { canManage } from "@/lib/roles"
 import { formatUsd } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
+
+/** The sending dashboard (its own app on its own address, coldbrew-sending): mailboxes, personas and Coldbrew's own
+ * sending. Signs in with the same account. No link until NEXT_PUBLIC_SENDING_URL is set. */
+const SENDING_URL = process.env.NEXT_PUBLIC_SENDING_URL ?? ""
 
 interface NavItem {
   href: string
@@ -182,6 +186,16 @@ export function AppSidebar() {
       <SidebarFooter className="gap-3 px-2 pb-3">
         <SidebarMenu className="gap-0.5">
           <BackgroundActivity />
+          {SENDING_URL && (
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild tooltip="Sending dashboard" className="h-8 text-[14px]">
+                <a href={SENDING_URL}>
+                  <ArrowUpRight className="text-muted-foreground" />
+                  <span>Sending dashboard</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )}
           <CollapseToggle />
           <AccountMenu />
         </SidebarMenu>
