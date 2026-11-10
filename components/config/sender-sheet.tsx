@@ -37,14 +37,21 @@ interface Form {
   warmupReplyPercent: string
 }
 
-function initial(sender: Sender | null, pool: Pool): Form {
+export interface SheetDefaults {
+  dailyLimit: number
+  warmupTarget: number
+  replyPercent: number
+}
+
+function initial(sender: Sender | null, pool: Pool, d: SheetDefaults): Form {
   if (!sender) {
     const p = PROVIDERS[0]
     return {
       provider: p.id, fromEmail: "", fromName: "", label: "", personaId: "none", smtpUsername: "", smtpPassword: "",
       smtpHost: p.smtp.host, smtpPort: String(p.smtp.port), smtpSecurity: p.smtp.security, readReplies: true, sameLogin: true,
       imapUsername: "", imapPassword: "", imapHost: p.imap?.host ?? "", imapPort: String(p.imap?.port ?? 993),
-      imapSecurity: p.imap?.security ?? "ssl", dailyLimit: "30", pool, warmupDailyTarget: "20", warmupReplyPercent: "30",
+      imapSecurity: p.imap?.security ?? "ssl", dailyLimit: String(d.dailyLimit), pool, warmupDailyTarget: String(d.warmupTarget),
+      warmupReplyPercent: String(d.replyPercent),
     }  // prettier-ignore
   }
   const same = !sender.imapUsername || sender.imapUsername === sender.smtpUsername
@@ -105,6 +112,7 @@ export function SenderSheet({
   sender,
   personas,
   pool = "sending",
+  defaults = { dailyLimit: 30, warmupTarget: 20, replyPercent: 30 },
   onClose,
   onSaved,
 }: {
@@ -113,10 +121,12 @@ export function SenderSheet({
   personas: Persona[]
   /** The pool a new mailbox joins: the page it's added from. */
   pool?: Pool
+  /** A new mailbox's starting numbers: the workspace's Settings. */
+  defaults?: SheetDefaults
   onClose: () => void
   onSaved: (s: Sender) => void
 }) {
-  const [f, setF] = useState<Form>(() => initial(sender, pool))
+  const [f, setF] = useState<Form>(() => initial(sender, pool, defaults))
   const [errors, setErrors] = useState<Errors>({})
   const [busy, setBusy] = useState(false)
   const [serverOpen, setServerOpen] = useState(() => (sender ? sender.provider === "custom" : false))

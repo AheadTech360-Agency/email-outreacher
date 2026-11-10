@@ -27,6 +27,7 @@ import {
   canManage,
   deleteSender,
   errorText,
+  fetchOwnSettings,
   fetchPersonas,
   fetchSenders,
   fetchSendingStatus,
@@ -65,6 +66,7 @@ export function MailboxPage({ pool }: { pool: Pool }) {
   const senders = useApi(() => (workspaceId ? fetchSenders(workspaceId) : Promise.resolve([])), [workspaceId])
   const personas = useApi(() => (workspaceId ? fetchPersonas(workspaceId) : Promise.resolve([])), [workspaceId])
   const status = useApi(fetchSendingStatus, [])
+  const settings = useApi(() => (workspaceId ? fetchOwnSettings(workspaceId) : Promise.resolve(null)), [workspaceId])
   // From Overview's "Add a mailbox" (?add=1).
   const [editing, setEditing] = useState<Sender | "new" | null>(() =>
     typeof window !== "undefined" && new URLSearchParams(window.location.search).get("add") === "1" ? "new" : null,
@@ -280,6 +282,7 @@ export function MailboxPage({ pool }: { pool: Pool }) {
           sender={editing === "new" ? null : editing}
           personas={personas.data ?? []}
           pool={pool}
+          defaults={settings.data ? { dailyLimit: settings.data.defaultDailyLimit, warmupTarget: settings.data.warmupDefaultTarget, replyPercent: settings.data.warmupDefaultReplyPercent } : undefined}
           onClose={() => setEditing(null)}
           onSaved={(s) => {
             replace(s)

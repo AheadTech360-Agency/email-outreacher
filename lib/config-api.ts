@@ -288,3 +288,32 @@ export interface Preview {
 /** Every email of the campaign as this lead gets it. write: Coldbrew writes missing follow-ups now (Claude). */
 export const previewEnrollment = (ws: string, id: string, write = false) =>
   api<Preview>(`/enrollments/${id}/preview?write=${write}`, { workspaceId: ws, method: "POST" })
+
+// ---------- Settings (sending limits and warm-up) ----------
+
+export interface OwnSettings {
+  sendingPaused: boolean
+  defaultDailyLimit: number
+  workspaceDailyCap: number | null
+  minGapMinutes: number
+  maxGapMinutes: number
+  warmupEnabled: boolean
+  warmupTimezone: string
+  warmupStart: string
+  warmupEnd: string
+  warmupDays: number[]
+  warmupStartPerDay: number
+  warmupRampPerDay: number
+  warmupDefaultTarget: number
+  warmupDefaultReplyPercent: number
+  warmupStarPercent: number
+}
+
+/** Plus the server's switches: off, everything is a dry run, whatever the settings say. */
+export interface OwnSettingsOut extends OwnSettings {
+  sendingLive: boolean
+  warmupLive: boolean
+}
+
+export const fetchOwnSettings = (ws: string) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws })
+export const saveOwnSettings = (ws: string, body: OwnSettings) => api<OwnSettingsOut>("/own-sending/settings", { workspaceId: ws, method: "PUT", body })
