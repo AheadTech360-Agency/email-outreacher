@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import type { CampaignInput, Schedule, Step } from "@/lib/config-api"
 import { cn } from "@/lib/utils"
@@ -15,8 +16,9 @@ export const NEW_CAMPAIGN: CampaignInput = {
   schedule: { timezone: "America/New_York", start: "09:00", end: "17:00", days: [1, 2, 3, 4, 5, 6] },
   steps: [
     { delayDays: 0, threadMode: "new", subject: "{{email1Subject}}", body: "{{email1Body}}" },
-    { delayDays: 2, threadMode: "reply", subject: "", body: "Hi {{firstName|there}},\n\nBringing this back to the top of your inbox in case it got buried." },
-    { delayDays: 3, threadMode: "reply", subject: "", body: "Hi {{firstName|there}},\n\nLast note from me on this. If the timing's off, no problem at all." },
+    // Written by Coldbrew for each lead, with the follow-up prompts, like CheapSequencer campaigns' follow-ups.
+    { delayDays: 2, threadMode: "reply", subject: "", body: "{{followUp}}" },
+    { delayDays: 3, threadMode: "reply", subject: "", body: "{{followUp}}" },
   ],
 }
 
@@ -241,6 +243,21 @@ export function CampaignEditor({
                 ) : (
                   <p className="text-[12.5px] text-muted-foreground">Subject: &quot;Re:&quot; and email 1&apos;s subject, so it lands in the same thread.</p>
                 )}
+                {i >= 1 && i <= 4 && (
+                  <label className="flex items-center gap-2.5 text-[13px]">
+                    <Switch
+                      checked={step.body.trim() === "{{followUp}}"}
+                      disabled={disabled}
+                      onCheckedChange={(on) => update(i, { body: on ? "{{followUp}}" : "Hi {{firstName|there}},\n\n" })}
+                    />
+                    Coldbrew writes it for each lead, with your follow-up {i + 1} prompt
+                  </label>
+                )}
+                {step.body.trim() === "{{followUp}}" && i >= 1 && i <= 4 ? (
+                  <p className="rounded-md bg-muted/60 px-3 py-2.5 text-[13px] leading-5 text-muted-foreground">
+                    Written when it&apos;s due (or when you preview a lead), from the lead, their company, the first email and the follow-ups before it. Kept once written.
+                  </p>
+                ) : (
                 <Textarea
                   aria-label={`Body of email ${i + 1}`}
                   rows={i === 0 ? 4 : 5}
@@ -250,6 +267,7 @@ export function CampaignEditor({
                   onChange={(e) => update(i, { body: e.target.value })}
                   className="font-[inherit] leading-6"
                 />
+                )}
               </div>
             </li>
           )

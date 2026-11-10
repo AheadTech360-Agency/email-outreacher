@@ -2,13 +2,14 @@
 
 import { useParams, useRouter } from "next/navigation"
 import { useState } from "react"
-import { Archive, MoreHorizontal, Pause, Play, Square, Trash2, UserPlus } from "lucide-react"
+import { Archive, Eye, MoreHorizontal, Pause, Play, Square, Trash2, UserPlus } from "lucide-react"
 import { toast } from "sonner"
 import { ActivityFeed } from "@/components/config/activity-feed"
 import { AddLeadsDialog } from "@/components/config/add-leads-dialog"
 import { CampaignStatusPill, DryRunBanner, EnrollmentStatusPill, rate } from "@/components/config/campaign-bits"
 import { CampaignEditor } from "@/components/config/campaign-editor"
 import { LoadError } from "@/components/config/load-error"
+import { PreviewDialog } from "@/components/config/preview-dialog"
 import { Page } from "@/components/config/shell"
 import {
   AlertDialog,
@@ -233,6 +234,7 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
   onAdd: () => void
   archived: boolean
 }) {
+  const [previewing, setPreviewing] = useState<string | null>(null)
   const act = async (e: Enrollment, action: "pause" | "resume" | "stop") => {
     try {
       await actOnEnrollment(wsId, e.id, action)
@@ -285,26 +287,34 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
               </p>
               <p className="col-start-1 truncate text-[12.5px] text-muted-foreground md:col-start-auto">{e.sender ?? "No mailbox"}</p>
               <div className="col-start-2 row-span-4 row-start-1 flex justify-end md:col-start-auto md:row-span-1 md:row-start-auto">
-                {manager && (e.status === "active" || e.status === "paused") && (
+                {manager && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon" aria-label={`Actions for ${e.name}`}>
                         <MoreHorizontal />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="min-w-44">
-                      {e.status === "active" ? (
-                        <DropdownMenuItem onSelect={() => void act(e, "pause")}>
-                          <Pause /> Pause
-                        </DropdownMenuItem>
-                      ) : (
-                        <DropdownMenuItem onSelect={() => void act(e, "resume")}>
-                          <Play /> Resume
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem variant="destructive" onSelect={() => void act(e, "stop")}>
-                        <Square /> Stop for good
+                    <DropdownMenuContent align="end" className="min-w-48">
+                      <DropdownMenuItem onSelect={() => setPreviewing(e.id)}>
+                        <Eye /> Preview emails
                       </DropdownMenuItem>
+                      {(e.status === "active" || e.status === "paused") && (
+                        <>
+                          {e.status === "active" ? (
+                            <DropdownMenuItem onSelect={() => void act(e, "pause")}>
+                              <Pause /> Pause
+                            </DropdownMenuItem>
+                          ) : (
+                            <DropdownMenuItem onSelect={() => void act(e, "resume")}>
+                              <Play /> Resume
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => void act(e, "stop")}>
+                            <Square /> Stop for good
+                          </DropdownMenuItem>
+                        </>
+                      )}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
@@ -313,6 +323,7 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
           ))}
         </ul>
       )}
+      {previewing && <PreviewDialog wsId={wsId} enrollmentId={previewing} onClose={() => setPreviewing(null)} />}
     </section>
   )
 }

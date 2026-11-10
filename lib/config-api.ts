@@ -243,3 +243,25 @@ export const actOnEnrollment = (ws: string, id: string, action: "pause" | "resum
   api<Enrollment>(`/enrollments/${id}`, { workspaceId: ws, method: "PATCH", body: { action } })
 export const fetchActivity = (ws: string, opts: { campaignId?: string; kind?: "" | "sends" | "replies" | "problems" } = {}) =>
   api<Activity[]>(`/own-sending/activity?kind=${opts.kind ?? ""}${opts.campaignId ? `&campaignId=${opts.campaignId}` : ""}`, { workspaceId: ws })
+
+export interface PreviewEmail {
+  stepOrder: number
+  delayDays: number
+  threadMode: "new" | "reply"
+  subject: string
+  body: string
+  /** ready: exactly what goes out. to_write: a {{followUp}} Coldbrew hasn't written yet. problem: see note. */
+  state: "ready" | "to_write" | "problem"
+  note: string | null
+}
+
+export interface Preview {
+  leadName: string
+  leadEmail: string | null
+  sender: string | null
+  emails: PreviewEmail[]
+}
+
+/** Every email of the campaign as this lead gets it. write: Coldbrew writes missing follow-ups now (Claude). */
+export const previewEnrollment = (ws: string, id: string, write = false) =>
+  api<Preview>(`/enrollments/${id}/preview?write=${write}`, { workspaceId: ws, method: "POST" })
