@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useEffect, type CSSProperties, type ReactNode } from "react"
-import { ArrowUpLeft, Check, ChevronsUpDown, CircleUserRound, Gauge, LogOut, Mailbox, Moon, PanelLeftClose, Sun, UserRoundPen, type LucideIcon } from "lucide-react"
+import { Activity, ArrowUpLeft, Check, ChevronsUpDown, CircleUserRound, Gauge, LogOut, Mailbox, Moon, PanelLeftClose, Send, Sun, UserRoundPen, type LucideIcon } from "lucide-react"
 import { useTheme } from "next-themes"
 import { DispatchMark } from "@/components/config/dispatch-mark"
 import { Button } from "@/components/ui/button"
@@ -40,6 +40,8 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? ""
 
 const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/", label: "Overview", icon: Gauge },
+  { href: "/campaigns", label: "Campaigns", icon: Send },
+  { href: "/activity", label: "Activity", icon: Activity },
   { href: "/senders", label: "Sender accounts", icon: Mailbox },
   { href: "/personas", label: "Personas", icon: UserRoundPen },
 ]

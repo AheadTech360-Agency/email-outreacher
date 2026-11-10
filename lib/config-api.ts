@@ -126,3 +126,120 @@ export const addPersona = (ws: string, body: PersonaInput) => api<Persona>("/per
 export const editPersona = (ws: string, id: string, body: PersonaInput) =>
   api<Persona>(`/personas/${id}`, { workspaceId: ws, method: "PUT", body })
 export const deletePersona = (ws: string, id: string) => api<void>(`/personas/${id}`, { workspaceId: ws, method: "DELETE" })
+
+// ---------- Campaigns (Coldbrew's own sending) ----------
+
+export type CampaignStatus = "draft" | "active" | "paused" | "archived"
+
+export interface Schedule {
+  timezone: string
+  start: string
+  end: string
+  /** 1 is Monday, 7 is Sunday. */
+  days: number[]
+}
+
+export interface Step {
+  id?: string
+  stepOrder?: number
+  delayDays: number
+  threadMode: "new" | "reply"
+  subject: string
+  body: string
+}
+
+export interface CampaignStats {
+  leads: number
+  active: number
+  completed: number
+  stopped: number
+  sent: number
+  dryRuns: number
+  failed: number
+  replies: number
+  bounces: number
+  unsubscribes: number
+}
+
+export interface Campaign {
+  id: string
+  name: string
+  status: CampaignStatus
+  schedule: Schedule
+  steps: Step[]
+  stats: CampaignStats
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CampaignInput {
+  name: string
+  schedule: Schedule
+  steps: Step[]
+}
+
+export type EnrollmentStatus = "active" | "paused" | "completed" | "stopped"
+
+export interface Enrollment {
+  id: string
+  leadId: string
+  name: string
+  email: string | null
+  company: string
+  sender: string | null
+  status: EnrollmentStatus
+  stopReason: string | null
+  nextStepOrder: number
+  nextRunAt: string | null
+  sent: number
+  lastActivityAt: string | null
+  createdAt: string
+}
+
+export interface Candidate {
+  id: string
+  name: string
+  email: string
+  company: string
+  hasFirstEmail: boolean
+}
+
+export type ActivityKind = "sent" | "dry_run" | "failed" | "skipped" | "reply" | "bounce" | "unsubscribe" | "auto_reply"
+
+export interface Activity {
+  id: string
+  kind: ActivityKind
+  at: string
+  campaignId: string | null
+  campaign: string | null
+  leadId: string | null
+  leadName: string
+  leadEmail: string
+  mailbox: string | null
+  subject: string
+  detail: string
+}
+
+export interface SendingStatus {
+  live: boolean
+  variables: Record<string, string>
+}
+
+export const fetchSendingStatus = () => api<SendingStatus>("/own-sending/status")
+export const fetchCampaigns = (ws: string) => api<Campaign[]>("/campaigns", { workspaceId: ws })
+export const fetchCampaign = (ws: string, id: string) => api<Campaign>(`/campaigns/${id}`, { workspaceId: ws })
+export const addCampaign = (ws: string, body: CampaignInput) => api<Campaign>("/campaigns", { workspaceId: ws, method: "POST", body })
+export const editCampaign = (ws: string, id: string, body: CampaignInput) =>
+  api<Campaign>(`/campaigns/${id}`, { workspaceId: ws, method: "PUT", body })
+export const setCampaignStatus = (ws: string, id: string, status: CampaignStatus) =>
+  api<Campaign>(`/campaigns/${id}/status`, { workspaceId: ws, method: "PATCH", body: { status } })
+export const deleteCampaign = (ws: string, id: string) => api<void>(`/campaigns/${id}`, { workspaceId: ws, method: "DELETE" })
+export const fetchEnrollments = (ws: string, id: string) => api<Enrollment[]>(`/campaigns/${id}/enrollments`, { workspaceId: ws })
+export const fetchCandidates = (ws: string, id: string, q: string, approvedOnly: boolean) =>
+  api<Candidate[]>(`/campaigns/${id}/candidates?q=${encodeURIComponent(q)}&approvedOnly=${approvedOnly}`, { workspaceId: ws })
+export const addLeads = (ws: string, id: string, leadIds: string[]) =>
+  api<{ added: number; skipped: Record<string, number> }>(`/campaigns/${id}/enrollments`, { workspaceId: ws, method: "POST", body: { leadIds } })
+export const actOnEnrollment = (ws: string, id: string, action: "pause" | "resume" | "stop") =>
+  api<Enrollment>(`/enrollments/${id}`, { workspaceId: ws, method: "PATCH", body: { action } })
+export const fetchActivity = (ws: string, opts: { campaignId?: string; kind?: "" | "sends" | "replies" | "problems" } = {}) =>
+  api<Activity[]>(`/own-sending/activity?kind=${opts.kind ?? ""}${opts.campaignId ? `&campaignId=${opts.campaignId}` : ""}`, { workspaceId: ws })
