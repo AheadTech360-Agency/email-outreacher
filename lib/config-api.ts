@@ -71,7 +71,21 @@ export interface Sender {
   lastCheckedAt: string | null
   lastError: string | null
   createdAt: string
+  pool: Pool
+  warmupDailyTarget: number
+  warmupReplyPercent: number
+  warmupStartedAt: string | null
+  warmupTargetToday: number
+  warmupSentToday: number
+  warmupReceived7d: number
+  /** Received warm-up emails that landed in the inbox rather than spam, over 7 days. null until any were opened. */
+  warmupInboxRate7d: number | null
+  warmupRescued7d: number
+  warmupReplied7d: number
 }
+
+/** sending: campaigns send from it. warming: the email warmer uses it. */
+export type Pool = "sending" | "warming"
 
 export interface SenderInput {
   label: string
@@ -90,6 +104,9 @@ export interface SenderInput {
   imapUsername: string | null
   imapPassword: string | null
   dailyLimit: number
+  pool: Pool
+  warmupDailyTarget: number
+  warmupReplyPercent: number
 }
 
 export interface TestResult {
@@ -105,6 +122,8 @@ export const addSender = (ws: string, body: SenderInput) => api<Sender>("/sender
 export const editSender = (ws: string, id: string, body: SenderInput) => api<Sender>(`/senders/${id}`, { workspaceId: ws, method: "PUT", body })
 export const pauseSender = (ws: string, id: string, paused: boolean) =>
   api<Sender>(`/senders/${id}/status`, { workspaceId: ws, method: "PATCH", body: { paused } })
+export const moveSender = (ws: string, id: string, pool: Pool) =>
+  api<Sender>(`/senders/${id}/pool`, { workspaceId: ws, method: "PATCH", body: { pool } })
 export const testSender = (ws: string, id: string) => api<TestResult>(`/senders/${id}/test`, { workspaceId: ws, method: "POST" })
 export const deleteSender = (ws: string, id: string) => api<void>(`/senders/${id}`, { workspaceId: ws, method: "DELETE" })
 
@@ -225,6 +244,7 @@ export interface Activity {
 
 export interface SendingStatus {
   live: boolean
+  warmupLive: boolean
   variables: Record<string, string>
 }
 

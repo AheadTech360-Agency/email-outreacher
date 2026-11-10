@@ -15,7 +15,8 @@ export default function OverviewPage() {
   const { workspaceId, me, href: at } = useSession()
   const senders = useApi(() => (workspaceId ? fetchSenders(workspaceId) : Promise.resolve([])), [workspaceId])
   const personas = useApi(() => (workspaceId ? fetchPersonas(workspaceId) : Promise.resolve([])), [workspaceId])
-  const list = senders.data ?? []
+  // Campaign capacity: sending mailboxes only (warming ones only warm up).
+  const list = (senders.data ?? []).filter((s) => s.pool === "sending")
   const attention = list.filter((s) => s.status === "failed" || s.status === "untested")
   const manager = canManage(me?.role)
 
@@ -84,7 +85,8 @@ export default function OverviewPage() {
                 This workspace
               </h2>
               <dl className="mt-3 divide-y divide-rule text-[13.5px]">
-                <Row label="Mailboxes" value={list.length} href={at("/senders")} />
+                <Row label="Sending mailboxes" value={list.length} href={at("/senders")} />
+                <Row label="Warming mailboxes" value={(senders.data ?? []).filter((s) => s.pool === "warming").length} href={at("/warming")} />
                 <Row label="Connected" value={list.filter((s) => s.status === "ok").length} />
                 <Row label="Reading replies" value={list.filter((s) => s.imapHost).length} />
                 <Row label="Personas" value={personas.data?.length ?? "…"} href={at("/personas")} />

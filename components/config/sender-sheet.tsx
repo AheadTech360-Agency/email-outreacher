@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Switch } from "@/components/ui/switch"
-import { type Persona, type Security, type Sender, type SenderInput, addSender, editSender, errorText, testSender } from "@/lib/config-api"
+import { type Persona, type Pool, type Security, type Sender, type SenderInput, addSender, editSender, errorText, testSender } from "@/lib/config-api"
 import { PROVIDERS, providerOf, securityFor } from "@/lib/config-providers"
 import { cn } from "@/lib/utils"
 
@@ -32,16 +32,19 @@ interface Form {
   imapPort: string
   imapSecurity: Security
   dailyLimit: string
+  pool: Pool
+  warmupDailyTarget: string
+  warmupReplyPercent: string
 }
 
-function initial(sender: Sender | null): Form {
+function initial(sender: Sender | null, pool: Pool): Form {
   if (!sender) {
     const p = PROVIDERS[0]
     return {
       provider: p.id, fromEmail: "", fromName: "", label: "", personaId: "none", smtpUsername: "", smtpPassword: "",
       smtpHost: p.smtp.host, smtpPort: String(p.smtp.port), smtpSecurity: p.smtp.security, readReplies: true, sameLogin: true,
       imapUsername: "", imapPassword: "", imapHost: p.imap?.host ?? "", imapPort: String(p.imap?.port ?? 993),
-      imapSecurity: p.imap?.security ?? "ssl", dailyLimit: "30",
+      imapSecurity: p.imap?.security ?? "ssl", dailyLimit: "30", pool, warmupDailyTarget: "20", warmupReplyPercent: "30",
     }  // prettier-ignore
   }
   const same = !sender.imapUsername || sender.imapUsername === sender.smtpUsername
@@ -51,6 +54,7 @@ function initial(sender: Sender | null): Form {
     smtpPort: String(sender.smtpPort), smtpSecurity: sender.smtpSecurity, readReplies: !!sender.imapHost, sameLogin: same,
     imapUsername: sender.imapUsername ?? "", imapPassword: "", imapHost: sender.imapHost ?? providerOf(sender.provider).imap?.host ?? "",
     imapPort: String(sender.imapPort ?? 993), imapSecurity: sender.imapSecurity ?? "ssl", dailyLimit: String(sender.dailyLimit),
+    pool: sender.pool, warmupDailyTarget: String(sender.warmupDailyTarget), warmupReplyPercent: String(sender.warmupReplyPercent),
   }  // prettier-ignore
 }
 
@@ -72,6 +76,11 @@ function check(f: Form, editing: Sender | null): Errors {
   }
   const limit = Number(f.dailyLimit)
   if (!Number.isInteger(limit) || limit < 1 || limit > 500) e.dailyLimit = "A whole number from 1 to 500."
+  const target = Number(f.warmupDailyTarget)
+  if (!Number.isInteger(target) || target < 1 || target > 100) e.warmupDailyTarget = "A whole number from 1 to 100."
+  const reply = Number(f.warmupReplyPercent)
+  if (!Number.isInteger(reply) || reply < 0 || reply > 100) e.warmupReplyPercent = "A percentage from 0 to 100."
+  if (f.pool === "warming" && !f.readReplies) e.imapHost = "A warming mailbox needs reading turned on: it opens and replies to warm-up emails."
   return e
 }
 
@@ -85,7 +94,8 @@ function toInput(f: Form): SenderInput {
     imapSecurity: f.readReplies ? f.imapSecurity : null,
     imapUsername: f.readReplies ? (f.sameLogin ? username : f.imapUsername.trim()) : null,
     imapPassword: f.readReplies ? (f.sameLogin ? f.smtpPassword || null : f.imapPassword || null) : null,
-    dailyLimit: Number(f.dailyLimit),
+    dailyLimit: Number(f.dailyLimit), pool: f.pool, warmupDailyTarget: Number(f.warmupDailyTarget),
+    warmupReplyPercent: Number(f.warmupReplyPercent),
   }  // prettier-ignore
 }
 
@@ -94,16 +104,19 @@ export function SenderSheet({
   wsId,
   sender,
   personas,
+  pool = "sending",
   onClose,
   onSaved,
 }: {
   wsId: string
   sender: Sender | null
   personas: Persona[]
+  /** The pool a new mailbox joins: the page it's added from. */
+  pool?: Pool
   onClose: () => void
   onSaved: (s: Sender) => void
 }) {
-  const [f, setF] = useState<Form>(() => initial(sender))
+  const [f, setF] = useState<Form>(() => initial(sender, pool))
   const [errors, setErrors] = useState<Errors>({})
   const [busy, setBusy] = useState(false)
   const [serverOpen, setServerOpen] = useState(() => (sender ? sender.provider === "custom" : false))
@@ -161,7 +174,7 @@ export function SenderSheet({
     <Sheet open onOpenChange={(open) => !open && !busy && onClose()}>
       <SheetContent className="flex w-full flex-col gap-0 p-0 sm:max-w-xl!">
         <SheetHeader className="border-b px-6 py-5">
-          <SheetTitle className="text-[17px]">{sender ? `Edit ${sender.fromEmail}` : "Add a mailbox"}</SheetTitle>
+          <SheetTitle className="text-[17px]">{sender ? `Edit ${sender.fromEmail}` : pool === "warming" ? "Add a warming mailbox" : "Add a sending mailbox"}</SheetTitle>
           <SheetDescription>
             {sender ? "Change any detail. Leave a password empty to keep the saved one." : "Coldbrew sends from it and reads its replies. Passwords are encrypted and never shown again."}
           </SheetDescription>
@@ -284,16 +297,35 @@ export function SenderSheet({
             )}
           </Section>
 
-          <Section title="Daily limit">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="dailyLimit" label="Emails a day" error={errors.dailyLimit} hint="Start a new mailbox low and raise it as it warms up.">
-                <Input id="dailyLimit" inputMode="numeric" value={f.dailyLimit} onChange={(e) => set("dailyLimit", e.target.value.replace(/\D/g, ""))} aria-invalid={!!errors.dailyLimit} />
-              </Field>
-              <Field id="label" label="Note" hint="Only you see it, e.g. warm-up batch 2.">
-                <Input id="label" value={f.label} onChange={(e) => set("label", e.target.value)} />
-              </Field>
-            </div>
-          </Section>
+          {f.pool === "warming" ? (
+            <Section title="Warm-up">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field id="warmupDailyTarget" label="Warm-up emails a day" error={errors.warmupDailyTarget}
+                       hint="It starts at 3 a day and adds 2 a day until it reaches this.">
+                  <Input id="warmupDailyTarget" inputMode="numeric" value={f.warmupDailyTarget}
+                         onChange={(e) => set("warmupDailyTarget", e.target.value.replace(/\D/g, ""))} aria-invalid={!!errors.warmupDailyTarget} />
+                </Field>
+                <Field id="warmupReplyPercent" label="Reply to (%)" error={errors.warmupReplyPercent} hint="The share of warm-up emails it receives that it answers.">
+                  <Input id="warmupReplyPercent" inputMode="numeric" value={f.warmupReplyPercent}
+                         onChange={(e) => set("warmupReplyPercent", e.target.value.replace(/\D/g, ""))} aria-invalid={!!errors.warmupReplyPercent} />
+                </Field>
+                <Field id="label" label="Note" hint="Only you see it, e.g. new domain, November.">
+                  <Input id="label" value={f.label} onChange={(e) => set("label", e.target.value)} />
+                </Field>
+              </div>
+            </Section>
+          ) : (
+            <Section title="Daily limit">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field id="dailyLimit" label="Emails a day" error={errors.dailyLimit} hint="Start a new mailbox low and raise it as it warms up.">
+                  <Input id="dailyLimit" inputMode="numeric" value={f.dailyLimit} onChange={(e) => set("dailyLimit", e.target.value.replace(/\D/g, ""))} aria-invalid={!!errors.dailyLimit} />
+                </Field>
+                <Field id="label" label="Note" hint="Only you see it, e.g. warm-up batch 2.">
+                  <Input id="label" value={f.label} onChange={(e) => set("label", e.target.value)} />
+                </Field>
+              </div>
+            </Section>
+          )}
         </form>
 
         <SheetFooter className="flex-row justify-end gap-2 border-t px-6 py-4">
