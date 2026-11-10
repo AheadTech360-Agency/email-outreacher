@@ -40,9 +40,9 @@ import { formatUsd } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-/** The sending dashboard (its own app on its own address, coldbrew-sending): mailboxes, personas and Coldbrew's own
- * sending. Signs in with the same account. No link until NEXT_PUBLIC_SENDING_URL is set. */
-const SENDING_URL = process.env.NEXT_PUBLIC_SENDING_URL ?? ""
+/** The sending dashboard (app/config, served on its own address, config.xxx.com): mailboxes, personas and Coldbrew's
+ * own sending. Same deployment, same account. Until NEXT_PUBLIC_CONFIG_URL is set it opens at /config here. */
+const SENDING_URL = process.env.NEXT_PUBLIC_CONFIG_URL || "/config"
 
 interface NavItem {
   href: string

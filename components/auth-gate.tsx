@@ -13,15 +13,19 @@ import { StoreProvider } from "@/lib/store"
 const PUBLIC = ["/login"]
 
 /** Shows the app to a signed-in person and sends everyone else to /login. */
-export function AuthGate({ sidebarOpen, children }: { sidebarOpen: boolean; children: ReactNode }) {
+export function AuthGate({ sidebarOpen, site = "app", children }: { sidebarOpen: boolean; site?: "app" | "config"; children: ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const { session, me, meError, signOut, reloadMe } = useAuth()
   const isPublic = PUBLIC.some((p) => pathname.startsWith(p))
+  // The sending dashboard runs its own gate and sidebar (app/config/layout.tsx).
+  const dashboard = site === "config"
 
   useEffect(() => {
-    if (!isPublic && session === null) router.replace(`/login?next=${encodeURIComponent(pathname)}`)
-  }, [isPublic, session, pathname, router])
+    if (!dashboard && !isPublic && session === null) router.replace(`/login?next=${encodeURIComponent(pathname)}`)
+  }, [dashboard, isPublic, session, pathname, router])
+
+  if (dashboard) return <>{children}</>
 
   if (!authConfigured)
     return (

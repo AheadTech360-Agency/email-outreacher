@@ -35,9 +35,8 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
-  async redirects() {
-    return [{ source: "/", destination: "/home", permanent: false }];
-  },
+  // "/" goes to /home on Coldbrew's address only: proxy.ts does it, since on the sending dashboard's address "/" is
+  // the dashboard's overview.
   turbopack: {
     rules: {
       "*.css": {
