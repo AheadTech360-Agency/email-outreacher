@@ -83,6 +83,7 @@ export default function CampaignPage() {
   return (
     <Page
       title={c.name}
+      description={c.icpId ? `The campaign for the ${c.icpName ?? "ICP"} ICP. Every ICP keeps one: archive it to stop it.` : undefined}
       actions={
         manager && (
           <>
@@ -114,10 +115,14 @@ export default function CampaignPage() {
                     <Archive /> Archive
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" disabled={s.sent > 0} onSelect={() => setConfirm("delete")}>
-                  <Trash2 /> {s.sent > 0 ? "Delete (it has sent)" : "Delete"}
-                </DropdownMenuItem>
+                {!c.icpId && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem variant="destructive" disabled={s.sent > 0} onSelect={() => setConfirm("delete")}>
+                      <Trash2 /> {s.sent > 0 ? "Delete (it has sent)" : "Delete"}
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </>
@@ -174,7 +179,7 @@ export default function CampaignPage() {
       </Tabs>
 
       {adding && (
-        <AddLeadsDialog wsId={workspaceId} campaignId={c.id} needsFirstEmail={needsFirstEmail} onClose={() => setAdding(false)}
+        <AddLeadsDialog wsId={workspaceId} campaignId={c.id} icpName={c.icpId ? c.icpName ?? "this ICP" : null} needsFirstEmail={needsFirstEmail} onClose={() => setAdding(false)}
                         onAdded={() => (setAdding(false), refresh(), setTab("leads"))} />
       )}
 

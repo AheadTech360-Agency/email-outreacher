@@ -22,7 +22,7 @@ export default function CampaignsPage() {
   return (
     <Page
       title="Campaigns"
-      description="Each campaign sends its emails to the leads in it, from your connected mailboxes, inside its sending window."
+      description="Every ICP has its campaign, made for you as a draft. Each one sends its emails to the leads in it, from your connected mailboxes, inside its sending window."
       actions={
         manager && (
           <Button asChild>
@@ -77,6 +77,7 @@ export default function CampaignsPage() {
                   <span className="min-w-0">
                     <span className="block truncate text-[14px] font-medium">{c.name}</span>
                     <span className="block truncate text-[12.5px] text-muted-foreground">
+                      {c.icpId ? "ICP campaign, " : ""}
                       {c.steps.length} {c.steps.length === 1 ? "email" : "emails"}
                       {c.stats.dryRuns > 0 && `, ${c.stats.dryRuns} logged in dry run`}
                     </span>

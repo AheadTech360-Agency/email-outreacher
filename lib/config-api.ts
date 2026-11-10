@@ -164,6 +164,9 @@ export interface CampaignStats {
 export interface Campaign {
   id: string
   name: string
+  /** The ICP this campaign is for: every enabled ICP has one. null for one made by hand. */
+  icpId: string | null
+  icpName: string | null
   status: CampaignStatus
   schedule: Schedule
   steps: Step[]
@@ -235,8 +238,8 @@ export const setCampaignStatus = (ws: string, id: string, status: CampaignStatus
   api<Campaign>(`/campaigns/${id}/status`, { workspaceId: ws, method: "PATCH", body: { status } })
 export const deleteCampaign = (ws: string, id: string) => api<void>(`/campaigns/${id}`, { workspaceId: ws, method: "DELETE" })
 export const fetchEnrollments = (ws: string, id: string) => api<Enrollment[]>(`/campaigns/${id}/enrollments`, { workspaceId: ws })
-export const fetchCandidates = (ws: string, id: string, q: string, approvedOnly: boolean) =>
-  api<Candidate[]>(`/campaigns/${id}/candidates?q=${encodeURIComponent(q)}&approvedOnly=${approvedOnly}`, { workspaceId: ws })
+export const fetchCandidates = (ws: string, id: string, q: string, approvedOnly: boolean, icpOnly = true) =>
+  api<Candidate[]>(`/campaigns/${id}/candidates?q=${encodeURIComponent(q)}&approvedOnly=${approvedOnly}&icpOnly=${icpOnly}`, { workspaceId: ws })
 export const addLeads = (ws: string, id: string, leadIds: string[]) =>
   api<{ added: number; skipped: Record<string, number> }>(`/campaigns/${id}/enrollments`, { workspaceId: ws, method: "POST", body: { leadIds } })
 export const actOnEnrollment = (ws: string, id: string, action: "pause" | "resume" | "stop") =>

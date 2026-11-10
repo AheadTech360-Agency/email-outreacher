@@ -12,9 +12,11 @@ import { type Candidate, addLeads, errorText, fetchCandidates } from "@/lib/conf
 
 /** Pick Coldbrew leads to put into the campaign. Only leads that can be added are offered: an email address, not in a
  * running campaign, never queued before (here or through CheapSequencer). */
-export function AddLeadsDialog({ wsId, campaignId, needsFirstEmail, onClose, onAdded }: {
+export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onClose, onAdded }: {
   wsId: string
   campaignId: string
+  /** An ICP's campaign: its leads are offered first. */
+  icpName: string | null
   needsFirstEmail: boolean
   onClose: () => void
   onAdded: () => void
@@ -22,6 +24,7 @@ export function AddLeadsDialog({ wsId, campaignId, needsFirstEmail, onClose, onA
   const [query, setQuery] = useState("")
   const [q, setQ] = useState("")
   const [approvedOnly, setApprovedOnly] = useState(true)
+  const [icpOnly, setIcpOnly] = useState(true)
   const [rows, setRows] = useState<Candidate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -34,13 +37,13 @@ export function AddLeadsDialog({ wsId, campaignId, needsFirstEmail, onClose, onA
 
   useEffect(() => {
     let live = true
-    fetchCandidates(wsId, campaignId, q, approvedOnly)
+    fetchCandidates(wsId, campaignId, q, approvedOnly, icpOnly)
       .then((r) => live && (setRows(r), setError(null)))
       .catch((e: unknown) => live && setError(errorText(e)))
     return () => {
       live = false
     }
-  }, [wsId, campaignId, q, approvedOnly])
+  }, [wsId, campaignId, q, approvedOnly, icpOnly])
 
   const list = rows ?? []
   const allPicked = list.length > 0 && list.every((c) => picked.has(c.id))
@@ -88,6 +91,12 @@ export function AddLeadsDialog({ wsId, campaignId, needsFirstEmail, onClose, onA
             <Switch checked={approvedOnly} onCheckedChange={setApprovedOnly} />
             Only with an approved Coldbrew email
           </label>
+          {icpName && (
+            <label className="flex items-center gap-2 text-[13px]">
+              <Switch checked={icpOnly} onCheckedChange={setIcpOnly} />
+              Only {icpName}&apos;s leads
+            </label>
+          )}
         </div>
         {needsFirstEmail && !approvedOnly && (
           <p className="text-[12.5px] text-muted-foreground">Email 1 sends the Coldbrew-written email, so leads without an approved one are left out when added.</p>
