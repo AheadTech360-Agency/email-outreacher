@@ -30,6 +30,8 @@ const STOP: Record<string, string> = {
   manual: "Stopped by hand",
   failed: "Couldn't send",
   do_not_contact: "Do not contact",
+  no_profile: "Profile not found",
+  not_connected: "Didn't accept",
 }
 
 export function EnrollmentStatusPill({ status, stopReason }: { status: EnrollmentStatus; stopReason: string | null }) {
@@ -50,8 +52,20 @@ export function EnrollmentStatusPill({ status, stopReason }: { status: Enrollmen
 export const rate = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(part / whole < 0.1 ? 1 : 0)}%` : "—")
 
 /** Shown while the scheduler only logs (OWN_SENDING_LIVE off): nothing goes out yet. */
-export function DryRunBanner({ live }: { live: boolean | undefined }) {
+export function DryRunBanner({ live, social }: { live: boolean | undefined; social?: "linkedin" | "instagram" }) {
   if (live !== false) return null
+  if (social)
+    return (
+      <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-dashed border-data/40 bg-data-soft/40 px-4 py-3">
+        <FlaskConical className="mt-0.5 size-4 flex-none text-data" aria-hidden />
+        <p className="text-[13.5px] leading-5">
+          <span className="font-medium">Dry run: nothing is sent yet.</span>{" "}
+          <span className="text-muted-foreground">
+            Running {social === "linkedin" ? "LinkedIn" : "Instagram"} campaigns log each step they would send, under Activity. Turn on OWN_SOCIAL_LIVE on Railway to send for real.
+          </span>
+        </p>
+      </div>
+    )
   return (
     <div role="status" className="mb-6 flex items-start gap-3 rounded-xl border border-dashed border-data/40 bg-data-soft/40 px-4 py-3">
       <FlaskConical className="mt-0.5 size-4 flex-none text-data" aria-hidden />

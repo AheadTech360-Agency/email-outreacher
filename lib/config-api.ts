@@ -158,10 +158,15 @@ export interface Schedule {
   days: number[]
 }
 
+export type Channel = "email" | "linkedin" | "instagram"
+/** email (email campaigns), invite (a LinkedIn connection request, first step only) or message (LinkedIn, Instagram). */
+export type StepAction = "email" | "invite" | "message"
+
 export interface Step {
   id?: string
   stepOrder?: number
   delayDays: number
+  action: StepAction
   threadMode: "new" | "reply"
   subject: string
   body: string
@@ -186,6 +191,7 @@ export interface Campaign {
   /** The ICP this campaign is for: every enabled ICP has one. null for one made by hand. */
   icpId: string | null
   icpName: string | null
+  channel: Channel
   status: CampaignStatus
   schedule: Schedule
   steps: Step[]
@@ -196,6 +202,8 @@ export interface Campaign {
 
 export interface CampaignInput {
   name: string
+  /** Set when it's made; it can't change. */
+  channel: Channel
   schedule: Schedule
   steps: Step[]
 }
@@ -207,7 +215,10 @@ export interface Enrollment {
   leadId: string
   name: string
   email: string | null
+  /** LinkedIn and Instagram campaigns: their profile there. */
+  profileUrl: string | null
   company: string
+  /** The mailbox, or the LinkedIn or Instagram account, it sends from. */
   sender: string | null
   status: EnrollmentStatus
   stopReason: string | null
@@ -224,6 +235,7 @@ export interface Candidate {
   email: string
   company: string
   hasFirstEmail: boolean
+  profileUrl: string | null
 }
 
 export type ActivityKind = "sent" | "dry_run" | "failed" | "skipped" | "reply" | "bounce" | "unsubscribe" | "auto_reply"
@@ -245,7 +257,12 @@ export interface Activity {
 export interface SendingStatus {
   live: boolean
   warmupLive: boolean
+  /** LinkedIn and Instagram (OWN_SOCIAL_LIVE): off, their steps are only logged. */
+  socialLive: boolean
   variables: Record<string, string>
+  socialVariables: Record<string, string>
+  /** A new LinkedIn or Instagram campaign's steps. */
+  socialSteps: Record<"linkedin" | "instagram", { action: StepAction; delayDays: number; body: string }[]>
 }
 
 export const fetchSendingStatus = () => api<SendingStatus>("/own-sending/status")
@@ -270,7 +287,8 @@ export const fetchActivity = (ws: string, opts: { campaignId?: string; kind?: ""
 export interface PreviewEmail {
   stepOrder: number
   delayDays: number
-  threadMode: "new" | "reply"
+  /** Email steps: new or reply. LinkedIn and Instagram steps: invite or message. */
+  threadMode: "new" | "reply" | "invite" | "message"
   subject: string
   body: string
   /** ready: exactly what goes out. to_write: a {{followUp}} Coldbrew hasn't written yet. problem: see note. */

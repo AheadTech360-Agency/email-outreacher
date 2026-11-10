@@ -12,9 +12,10 @@ import { type Candidate, addLeads, errorText, fetchCandidates } from "@/lib/conf
 
 /** Pick Coldbrew leads to put into the campaign. Only leads that can be added are offered: an email address, not in a
  * running campaign, never queued before (here or through CheapSequencer). */
-export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onClose, onAdded }: {
+export function AddLeadsDialog({ wsId, campaignId, channel = "email", icpName, needsFirstEmail, onClose, onAdded }: {
   wsId: string
   campaignId: string
+  channel?: "email" | "linkedin" | "instagram"
   /** An ICP's campaign: its leads are offered first. */
   icpName: string | null
   needsFirstEmail: boolean
@@ -23,7 +24,9 @@ export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onC
 }) {
   const [query, setQuery] = useState("")
   const [q, setQ] = useState("")
-  const [approvedOnly, setApprovedOnly] = useState(true)
+  const social = channel !== "email"
+  const network = channel === "linkedin" ? "LinkedIn" : "Instagram"
+  const [approvedOnly, setApprovedOnly] = useState(!social)
   const [icpOnly, setIcpOnly] = useState(true)
   const [rows, setRows] = useState<Candidate[] | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -79,7 +82,9 @@ export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onC
         <DialogHeader>
           <DialogTitle>Add leads</DialogTitle>
           <DialogDescription>
-            Coldbrew leads with an email address who aren&apos;t in a running campaign and were never queued before, here or through CheapSequencer.
+            {social
+              ? `Coldbrew leads with a ${network} profile who aren't in a running ${network} campaign and were never messaged there before.`
+              : "Coldbrew leads with an email address who aren't in a running campaign and were never queued before, here or through CheapSequencer."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-wrap items-center gap-3">
@@ -87,10 +92,12 @@ export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onC
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input aria-label="Search leads" placeholder="Search name, email or company" className="pl-8" value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          <label className="flex items-center gap-2 text-[13px]">
-            <Switch checked={approvedOnly} onCheckedChange={setApprovedOnly} />
-            Only with an approved Coldbrew email
-          </label>
+          {!social && (
+            <label className="flex items-center gap-2 text-[13px]">
+              <Switch checked={approvedOnly} onCheckedChange={setApprovedOnly} />
+              Only with an approved Coldbrew email
+            </label>
+          )}
           {icpName && (
             <label className="flex items-center gap-2 text-[13px]">
               <Switch checked={icpOnly} onCheckedChange={setIcpOnly} />
@@ -114,7 +121,13 @@ export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onC
             <p className="p-4 text-[13px] text-muted-foreground">Loading leads…</p>
           ) : !list.length ? (
             <p className="p-4 text-[13px] text-muted-foreground">
-              {q ? "No lead matches." : approvedOnly ? "No lead has an approved Coldbrew email waiting. Approve drafts in Coldbrew first." : "No lead can be added."}
+              {q
+                ? "No lead matches."
+                : social
+                  ? `No lead can be added: only leads with a ${network} profile address, not already in a ${network} campaign.`
+                  : approvedOnly
+                    ? "No lead has an approved Coldbrew email waiting. Approve drafts in Coldbrew first."
+                    : "No lead can be added."}
             </p>
           ) : (
             <ul className="max-h-80 divide-y divide-rule overflow-y-auto">
@@ -124,9 +137,9 @@ export function AddLeadsDialog({ wsId, campaignId, icpName, needsFirstEmail, onC
                     <Checkbox checked={picked.has(c.id)} onCheckedChange={(v) => toggle([c.id], v === true)} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate font-medium">{c.name}</span>
-                      <span className="block truncate text-[12.5px] text-muted-foreground">{[c.email, c.company].filter(Boolean).join(", ")}</span>
+                      <span className="block truncate text-[12.5px] text-muted-foreground">{[social ? c.profileUrl : c.email, c.company].filter(Boolean).join(", ")}</span>
                     </span>
-                    {!c.hasFirstEmail && <span className="flex-none text-[12px] text-muted-foreground">No approved email</span>}
+                    {!social && !c.hasFirstEmail && <span className="flex-none text-[12px] text-muted-foreground">No approved email</span>}
                   </label>
                 </li>
               ))}

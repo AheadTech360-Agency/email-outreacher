@@ -65,6 +65,21 @@ const SECTIONS: { kind: PromptKind; title: string; description: string }[] = [
     description: "Day 16, the last email: closes politely. Written just before it's due, only if there's still no reply.",
   },
   {
+    kind: "linkedin_invite",
+    title: "LinkedIn connection note",
+    description: "The note on a LinkedIn campaign's connection request ({{aiMessage}}). Written when it's due. Keep it under 200 characters.",
+  },
+  {
+    kind: "linkedin_message",
+    title: "LinkedIn message",
+    description: "Each message of a LinkedIn campaign ({{aiMessage}}), once they've accepted. Written when it's due, only if they haven't replied.",
+  },
+  {
+    kind: "instagram_message",
+    title: "Instagram message",
+    description: "Each message of an Instagram campaign ({{aiMessage}}). Written when it's due, only if they haven't replied.",
+  },
+  {
     kind: "sort",
     title: "Company sorting",
     description:

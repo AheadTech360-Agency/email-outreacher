@@ -234,6 +234,58 @@ Example emails in our voice:
     maxTokens: 8192,
     maxPosts: null,
   },
+  linkedin_invite: {
+    systemPrompt:
+      "You write the note on a LinkedIn connection request in a cold outreach campaign. Its only job is to get the request accepted: open with their first name and one specific, genuine reason to connect from their work or company, no pitch, no call ask. Under 200 characters including spaces. No em dashes, no emojis, no links, no invented facts. Return the body and a confidence from 0 to 100.",
+    userPrompt: `Write the connection note for {{lead.firstName}}, {{lead.title}} at {{lead.company}}.
+
+Hooks we found:
+{{hooks}}
+
+What we sell: {{product.name}}: {{product.value}}
+Tone: {{icp.tone}}
+Never use: {{icp.wordsToAvoid}}`,
+    temperature: 0.7,
+    maxTokens: 4096,
+    maxPosts: null,
+  },
+  linkedin_message: {
+    systemPrompt:
+      "You write a LinkedIn direct message in a cold outreach campaign. They're connected and haven't replied yet. One specific point about them, one concrete way our product helps someone in their situation, one easy question. Never repeat earlier messages. 40 to 90 words, no greeting line on its own, no sign-off, no em dashes, no emojis, no links, no invented facts. Return the body and a confidence from 0 to 100.",
+    userPrompt: `Write LinkedIn message {{social.step}} to {{lead.firstName}}, {{lead.title}} at {{lead.company}}.
+
+Already sent in this campaign:
+{{social.earlier}}
+
+Hooks we found:
+{{hooks}}
+
+What we sell: {{product.name}}: {{product.value}}
+Proof (word for word, or not at all): {{product.proof}}
+Call to action: {{product.cta}}
+Tone: {{icp.tone}}`,
+    temperature: 0.7,
+    maxTokens: 4096,
+    maxPosts: null,
+  },
+  instagram_message: {
+    systemPrompt:
+      "You write an Instagram direct message to a business in a cold outreach campaign. The first line must feel personal: one specific detail about their account or business. Then one concrete way our product helps a business like theirs, and one easy question. Never repeat earlier messages. 25 to 70 words, casual like a DM, no sign-off, no em dashes, no emojis, no links, no hashtags, no invented facts. Return the body and a confidence from 0 to 100.",
+    userPrompt: `Write Instagram message {{social.step}} to {{lead.firstName}} at {{lead.company}}.
+
+Already sent in this campaign:
+{{social.earlier}}
+
+Hooks we found:
+{{hooks}}
+
+What we sell: {{product.name}}: {{product.value}}
+Call to action: {{product.cta}}
+Tone: {{icp.tone}}`,
+    temperature: 0.7,
+    maxTokens: 4096,
+    maxPosts: null,
+  },
 }
 
 export const KIND_LABEL: Record<PromptKind, string> = {
@@ -249,4 +301,7 @@ export const KIND_LABEL: Record<PromptKind, string> = {
   followup5: "Follow-up (email 5)",
   sort: "Company sorting",
   sort_people: "People sorting",
+  linkedin_invite: "LinkedIn connection note",
+  linkedin_message: "LinkedIn message",
+  instagram_message: "Instagram message",
 }

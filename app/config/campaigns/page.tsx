@@ -2,13 +2,15 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Plus } from "lucide-react"
+import { useState } from "react"
+import { Briefcase, Camera, Mail, Plus } from "lucide-react"
 import { CampaignStatusPill, DryRunBanner, rate } from "@/components/config/campaign-bits"
 import { LoadError } from "@/components/config/load-error"
 import { Page } from "@/components/config/shell"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { canManage, fetchCampaigns, fetchSendingStatus, useApi } from "@/lib/config-api"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { type Channel, canManage, fetchCampaigns, fetchSendingStatus, useApi } from "@/lib/config-api"
 import { useSession } from "@/lib/config-session"
 
 export default function CampaignsPage() {
@@ -17,16 +19,19 @@ export default function CampaignsPage() {
   const manager = canManage(me?.role)
   const campaigns = useApi(() => (workspaceId ? fetchCampaigns(workspaceId) : Promise.resolve([])), [workspaceId])
   const status = useApi(fetchSendingStatus, [])
-  const list = campaigns.data ?? []
+  const [channel, setChannel] = useState<"all" | Channel>("all")
+  const all = campaigns.data ?? []
+  const list = channel === "all" ? all : all.filter((c) => c.channel === channel)
+  const newHref = href(channel === "all" || channel === "email" ? "/campaigns/new" : `/campaigns/new?channel=${channel}`)
 
   return (
     <Page
       title="Campaigns"
-      description="Every ICP has its campaign, made for you as a draft. Each one sends its emails to the leads in it, from your connected mailboxes, inside its sending window."
+      description="Email, LinkedIn and Instagram campaigns. Every ICP has its email campaign, made for you as a draft. Each campaign reaches the leads in it from your connected accounts, inside its sending window."
       actions={
         manager && (
           <Button asChild>
-            <Link href={href("/campaigns/new")}>
+            <Link href={newHref}>
               <Plus /> New campaign
             </Link>
           </Button>
@@ -34,6 +39,21 @@ export default function CampaignsPage() {
       }
     >
       <DryRunBanner live={status.data?.live} />
+      {channel !== "email" && channel !== "all" && <DryRunBanner live={status.data?.socialLive} social={channel} />}
+      <Tabs value={channel} onValueChange={(v) => setChannel(v as "all" | Channel)} className="mb-4">
+        <TabsList>
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="email">
+            <Mail /> Email
+          </TabsTrigger>
+          <TabsTrigger value="linkedin">
+            <Briefcase /> LinkedIn
+          </TabsTrigger>
+          <TabsTrigger value="instagram">
+            <Camera /> Instagram
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
       {campaigns.error && !campaigns.data ? (
         <LoadError message={campaigns.error} onRetry={campaigns.reload} />
       ) : !campaigns.data ? (
@@ -44,13 +64,17 @@ export default function CampaignsPage() {
         </div>
       ) : list.length === 0 ? (
         <section className="rounded-xl border bg-card px-6 py-14 text-center">
-          <h2 className="text-[17px] font-semibold">No campaigns yet</h2>
+          <h2 className="text-[17px] font-semibold">{channel === "all" ? "No campaigns yet" : `No ${CHANNEL_NAME[channel]} campaigns yet`}</h2>
           <p className="mx-auto mt-1.5 max-w-[50ch] text-[13.5px] text-muted-foreground">
-            A campaign is the emails a lead gets and when: the first one Coldbrew wrote for them, then the follow-ups. Start one, check it in dry run, then add leads.
+            {channel === "linkedin"
+              ? "A LinkedIn campaign sends a connection request, then messages once they accept, from your connected LinkedIn accounts. Coldbrew writes each one with your LinkedIn prompts."
+              : channel === "instagram"
+                ? "An Instagram campaign sends direct messages from your connected Instagram accounts. Coldbrew writes each one with your Instagram prompt."
+                : "A campaign is the emails a lead gets and when: the first one Coldbrew wrote for them, then the follow-ups. Start one, check it in dry run, then add leads."}
           </p>
           {manager && (
             <Button asChild className="mt-6">
-              <Link href={href("/campaigns/new")}>
+              <Link href={newHref}>
                 <Plus /> New campaign
               </Link>
             </Button>
@@ -77,8 +101,10 @@ export default function CampaignsPage() {
                   <span className="min-w-0">
                     <span className="block truncate text-[14px] font-medium">{c.name}</span>
                     <span className="block truncate text-[12.5px] text-muted-foreground">
-                      {c.icpId ? "ICP campaign, " : ""}
-                      {c.steps.length} {c.steps.length === 1 ? "email" : "emails"}
+                      {CHANNEL_NAME[c.channel]}
+                      {c.icpId ? ", ICP campaign" : ""}
+                      {", "}
+                      {c.steps.length} {c.channel === "email" ? (c.steps.length === 1 ? "email" : "emails") : c.steps.length === 1 ? "step" : "steps"}
                       {c.stats.dryRuns > 0 && `, ${c.stats.dryRuns} logged in dry run`}
                     </span>
                   </span>
@@ -88,7 +114,11 @@ export default function CampaignsPage() {
                   <Num label="Leads" value={c.stats.leads} />
                   <Num label="Sent" value={c.stats.sent} />
                   <Num label="Replied" value={c.stats.replies} sub={rate(c.stats.replies, c.stats.leads)} />
-                  <Num label="Bounced" value={c.stats.bounces} sub={rate(c.stats.bounces, c.stats.leads)} warn={c.stats.leads >= 20 && c.stats.bounces / c.stats.leads > 0.03} />
+                  {c.channel === "email" ? (
+                    <Num label="Bounced" value={c.stats.bounces} sub={rate(c.stats.bounces, c.stats.leads)} warn={c.stats.leads >= 20 && c.stats.bounces / c.stats.leads > 0.03} />
+                  ) : (
+                    <span className="hidden text-right text-[12.5px] text-muted-foreground md:block" title="LinkedIn and Instagram messages don't bounce">n/a</span>
+                  )}
                 </button>
               </li>
             ))}
@@ -98,6 +128,8 @@ export default function CampaignsPage() {
     </Page>
   )
 }
+
+const CHANNEL_NAME: Record<Channel, string> = { email: "Email", linkedin: "LinkedIn", instagram: "Instagram" }
 
 function Num({ label, value, sub, warn }: { label: string; value: number; sub?: string; warn?: boolean }) {
   return (

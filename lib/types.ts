@@ -173,6 +173,9 @@ export type PromptKind =
   | "sort_people"
   | "product"
   | "analysis"
+  | "linkedin_invite"
+  | "linkedin_message"
+  | "instagram_message"
 
 export interface PromptTemplate {
   id: string

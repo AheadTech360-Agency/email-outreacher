@@ -26,16 +26,18 @@ export function PreviewDialog({ wsId, enrollmentId, onClose }: { wsId: string; e
   }, [wsId, enrollmentId])
 
   const toWrite = data?.emails.filter((m) => m.state === "to_write").length ?? 0
+  const social = !!data?.emails.some((m) => m.threadMode === "invite" || m.threadMode === "message")
+  const thing = (n: number) => (social ? (n === 1 ? "message" : "messages") : n === 1 ? "follow-up" : "follow-ups")
   const write = async () => {
     setWriting(true)
     try {
       const p = await previewEnrollment(wsId, enrollmentId, true)
       setData(p)
       const problems = p.emails.filter((m) => m.state === "problem")
-      if (problems.length) toast.error("Some follow-ups couldn't be written", { description: problems.map((m) => m.note).filter(Boolean).join(" ") })
-      else toast.success(`Wrote ${toWrite} ${toWrite === 1 ? "follow-up" : "follow-ups"}`, { description: "Kept for this lead: this is the text that goes out." })
+      if (problems.length) toast.error(`Some ${thing(2)} couldn't be written`, { description: problems.map((m) => m.note).filter(Boolean).join(" ") })
+      else toast.success(`Wrote ${toWrite} ${thing(toWrite)}`, { description: "Kept for this lead: this is the text that goes out." })
     } catch (e) {
-      toast.error("Couldn't write the follow-ups", { description: errorText(e) })
+      toast.error(`Couldn't write the ${thing(2)}`, { description: errorText(e) })
     } finally {
       setWriting(false)
     }
@@ -45,9 +47,9 @@ export function PreviewDialog({ wsId, enrollmentId, onClose }: { wsId: string; e
     <Dialog open onOpenChange={(open) => !open && !writing && onClose()}>
       <DialogContent className="gap-4 sm:max-w-2xl!">
         <DialogHeader>
-          <DialogTitle>{data ? `Emails to ${data.leadName}` : "Preview"}</DialogTitle>
+          <DialogTitle>{data ? `${social ? "Messages" : "Emails"} to ${data.leadName}` : "Preview"}</DialogTitle>
           <DialogDescription>
-            {data ? `${data.leadEmail ?? "No address"}${data.sender ? `, sent from ${data.sender}` : ""}. Exactly what goes out; nothing is sent from here.` : "Loading…"}
+            {data ? `${data.leadEmail ?? (social ? "No profile" : "No address")}${data.sender ? `, sent from ${data.sender}` : ""}. Exactly what goes out; nothing is sent from here.` : "Loading…"}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -55,15 +57,15 @@ export function PreviewDialog({ wsId, enrollmentId, onClose }: { wsId: string; e
             {error}
           </p>
         ) : !data ? (
-          <p className="text-[13px] text-muted-foreground">Loading the emails…</p>
+          <p className="text-[13px] text-muted-foreground">Loading…</p>
         ) : (
           <ol className="max-h-[60vh] space-y-3 overflow-y-auto pr-1">
             {data.emails.map((m) => (
               <li key={m.stepOrder} className={cn("rounded-lg border", m.state === "problem" && "border-negative/40")}>
                 <div className="flex flex-wrap items-baseline gap-x-3 border-b bg-muted/40 px-4 py-2 text-[12.5px]">
-                  <span className="font-semibold">Email {m.stepOrder}</span>
+                  <span className="font-semibold">{social ? m.subject : `Email ${m.stepOrder}`}</span>
                   <span className="text-muted-foreground">{m.stepOrder === 1 ? "first" : `${m.delayDays} ${m.delayDays === 1 ? "day" : "days"} after the last`}</span>
-                  <span className="min-w-0 flex-1 truncate text-right text-foreground/80">{m.subject}</span>
+                  {!social && <span className="min-w-0 flex-1 truncate text-right text-foreground/80">{m.subject}</span>}
                 </div>
                 {m.state === "to_write" ? (
                   <p className="flex items-center gap-2 px-4 py-3 text-[13px] text-muted-foreground">
@@ -85,7 +87,7 @@ export function PreviewDialog({ wsId, enrollmentId, onClose }: { wsId: string; e
           </Button>
           {toWrite > 0 && (
             <Button onClick={() => void write()} disabled={writing}>
-              <PenLine /> {writing ? "Writing…" : `Write ${toWrite === 1 ? "the follow-up" : `the ${toWrite} follow-ups`} now`}
+              <PenLine /> {writing ? "Writing…" : `Write ${toWrite === 1 ? `the ${thing(1)}` : `the ${toWrite} ${thing(toWrite)}`} now`}
             </Button>
           )}
         </DialogFooter>

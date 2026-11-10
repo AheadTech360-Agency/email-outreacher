@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { ActivityFeed } from "@/components/config/activity-feed"
 import { AddLeadsDialog } from "@/components/config/add-leads-dialog"
 import { CampaignStatusPill, DryRunBanner, EnrollmentStatusPill, rate } from "@/components/config/campaign-bits"
-import { CampaignEditor } from "@/components/config/campaign-editor"
+import { CampaignEditor, stepLabel } from "@/components/config/campaign-editor"
 import { LoadError } from "@/components/config/load-error"
 import { PreviewDialog } from "@/components/config/preview-dialog"
 import { Page } from "@/components/config/shell"
@@ -27,7 +27,9 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   type CampaignStatus,
+  type Channel,
   type Enrollment,
+  type Step,
   actOnEnrollment,
   canManage,
   deleteCampaign,
@@ -41,6 +43,7 @@ import {
   useApi,
 } from "@/lib/config-api"
 import { useSession } from "@/lib/config-session"
+import { cn } from "@/lib/utils"
 
 const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "")
 
@@ -69,11 +72,14 @@ export default function CampaignPage() {
   const s = c.stats
   const shownTab = tab ?? (s.leads ? "leads" : "emails")
   const needsFirstEmail = c.steps.some((step) => (step.subject + step.body).includes("email1"))
+  const social = c.channel === "email" ? undefined : c.channel
+  const network = c.channel === "linkedin" ? "LinkedIn" : "Instagram"
+  const live = social ? status.data?.socialLive : status.data?.live
   const changeStatus = async (next: CampaignStatus) => {
     try {
       const updated = await setCampaignStatus(workspaceId, c.id, next)
       campaign.setData(updated)
-      toast.success(next === "active" ? (status.data?.live ? "Running: emails go out inside its window" : "Running in dry run: emails are logged, not sent") : next === "paused" ? "Paused: nothing more goes out until you resume it" : "Archived")
+      toast.success(next === "active" ? (live ? `Running: ${social ? "steps" : "emails"} go out inside its window` : `Running in dry run: ${social ? "steps" : "emails"} are logged, not sent`) : next === "paused" ? "Paused: nothing more goes out until you resume it" : "Archived")
     } catch (e) {
       toast.error("Couldn't change it", { description: errorText(e) })
     }
@@ -83,7 +89,7 @@ export default function CampaignPage() {
   return (
     <Page
       title={c.name}
-      description={c.icpId ? `The campaign for the ${c.icpName ?? "ICP"} ICP. Every ICP keeps one: archive it to stop it.` : undefined}
+      description={[social ? `A ${network} campaign.` : "", c.icpId ? `The campaign for the ${c.icpName ?? "ICP"} ICP. Every ICP keeps one: archive it to stop it.` : ""].filter(Boolean).join(" ") || undefined}
       actions={
         manager && (
           <>
@@ -129,40 +135,40 @@ export default function CampaignPage() {
         )
       }
     >
-      <DryRunBanner live={status.data?.live} />
+      <DryRunBanner live={live} social={social} />
 
-      <dl className="mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-rule sm:grid-cols-3 lg:grid-cols-6">
+      <dl className={cn("mb-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border bg-rule", social ? "sm:grid-cols-4" : "sm:grid-cols-3 lg:grid-cols-6")}>
         <Stat label="Leads" value={s.leads} sub={`${s.active} in sequence`} />
         <Stat label="Sent" value={s.sent} sub={s.dryRuns ? `${s.dryRuns} in dry run` : s.failed ? `${s.failed} failed` : undefined} />
         <Stat label="Replied" value={s.replies} sub={rate(s.replies, s.leads)} />
-        <Stat label="Bounced" value={s.bounces} sub={rate(s.bounces, s.leads)} />
-        <Stat label="Unsubscribed" value={s.unsubscribes} sub={rate(s.unsubscribes, s.leads)} />
+        {!social && <Stat label="Bounced" value={s.bounces} sub={rate(s.bounces, s.leads)} />}
+        {!social && <Stat label="Unsubscribed" value={s.unsubscribes} sub={rate(s.unsubscribes, s.leads)} />}
         <Stat label="Finished" value={s.completed} sub={s.stopped ? `${s.stopped} stopped` : undefined} />
       </dl>
 
       <Tabs value={shownTab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="leads">Leads</TabsTrigger>
-          <TabsTrigger value="emails">Emails</TabsTrigger>
+          <TabsTrigger value="emails">{social ? "Steps" : "Emails"}</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
 
         <TabsContent value="leads" className="mt-4">
-          <LeadsTable wsId={workspaceId} rows={enrollments.data} error={enrollments.error} manager={manager} steps={c.steps.length}
+          <LeadsTable wsId={workspaceId} rows={enrollments.data} error={enrollments.error} manager={manager} steps={c.steps} channel={c.channel}
                       onChanged={refresh} onAdd={() => setAdding(true)} archived={c.status === "archived"} />
         </TabsContent>
 
         <TabsContent value="emails" className="mt-4">
           <CampaignEditor
             key={c.updatedAt}
-            initial={{ name: c.name, schedule: c.schedule, steps: c.steps }}
-            variables={status.data?.variables ?? {}}
+            initial={{ name: c.name, channel: c.channel, schedule: c.schedule, steps: c.steps }}
+            variables={(social ? status.data?.socialVariables : status.data?.variables) ?? {}}
             disabled={!manager || c.status === "archived"}
             saveLabel="Save changes"
             onSave={async (input) => {
               const saved = await editCampaign(workspaceId, c.id, input)
               campaign.setData(saved)
-              toast.success("Saved", { description: s.leads ? "Leads part-way through get the new text from their next email." : undefined })
+              toast.success("Saved", { description: s.leads ? "Leads part-way through get the new text from their next step." : undefined })
             }}
           />
         </TabsContent>
@@ -172,14 +178,14 @@ export default function CampaignPage() {
             {activity.error && !activity.data ? (
               <LoadError message={activity.error} onRetry={activity.reload} />
             ) : (
-              <ActivityFeed items={activity.data ?? []} showCampaign={false} empty="Nothing yet. Sends, replies and bounces show here as they happen." />
+              <ActivityFeed items={activity.data ?? []} showCampaign={false} empty={social ? "Nothing yet. Requests, messages and replies show here as they happen." : "Nothing yet. Sends, replies and bounces show here as they happen."} />
             )}
           </section>
         </TabsContent>
       </Tabs>
 
       {adding && (
-        <AddLeadsDialog wsId={workspaceId} campaignId={c.id} icpName={c.icpId ? c.icpName ?? "this ICP" : null} needsFirstEmail={needsFirstEmail} onClose={() => setAdding(false)}
+        <AddLeadsDialog wsId={workspaceId} campaignId={c.id} channel={c.channel} icpName={c.icpId ? c.icpName ?? "this ICP" : null} needsFirstEmail={needsFirstEmail} onClose={() => setAdding(false)}
                         onAdded={() => (setAdding(false), refresh(), setTab("leads"))} />
       )}
 
@@ -190,7 +196,7 @@ export default function CampaignPage() {
             <AlertDialogDescription>
               {confirm === "delete"
                 ? "It has sent nothing, so its leads are freed to be added to another campaign."
-                : "It stops sending for good and keeps its history. Leads in it won't get any more emails from it."}
+                : "It stops sending for good and keeps its history. Leads in it won't get anything more from it."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -229,17 +235,24 @@ function Stat({ label, value, sub }: { label: string; value: number; sub?: strin
   )
 }
 
-function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archived }: {
+function LeadsTable({ wsId, rows, error, manager, steps, channel, onChanged, onAdd, archived }: {
   wsId: string
   rows: Enrollment[] | null
   error: string | null
   manager: boolean
-  steps: number
+  steps: Step[]
+  channel: Channel
   onChanged: () => void
   onAdd: () => void
   archived: boolean
 }) {
   const [previewing, setPreviewing] = useState<string | null>(null)
+  const social = channel !== "email"
+  const firstIsInvite = steps[0]?.action === "invite"
+  const nextLabel = (order: number) => {
+    const i = steps.findIndex((s) => s.stepOrder === order)
+    return i < 0 ? `Step ${order}` : stepLabel(channel, steps[i], i, firstIsInvite)
+  }
   const act = async (e: Enrollment, action: "pause" | "resume" | "stop") => {
     try {
       await actOnEnrollment(wsId, e.id, action)
@@ -268,7 +281,11 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
       ) : !rows.length ? (
         <div className="px-5 py-12 text-center">
           <p className="text-[14px] font-medium">No leads in this campaign yet</p>
-          <p className="mt-1 text-[13px] text-muted-foreground">Add leads whose Coldbrew email you&apos;ve approved. Each is sent from one mailbox, start to finish.</p>
+          <p className="mt-1 text-[13px] text-muted-foreground">
+            {social
+              ? `Add leads with a ${channel === "linkedin" ? "LinkedIn" : "Instagram"} profile. Each is reached from one account, start to finish.`
+              : "Add leads whose Coldbrew email you've approved. Each is sent from one mailbox, start to finish."}
+          </p>
           {manager && !archived && (
             <Button className="mt-4" onClick={onAdd}>
               <UserPlus /> Add leads
@@ -281,16 +298,16 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
             <li key={e.id} className="grid grid-cols-[minmax(0,1fr)_40px] items-center gap-x-4 gap-y-1.5 px-5 py-3 md:grid-cols-[minmax(0,2fr)_130px_minmax(0,1.2fr)_minmax(0,1.2fr)_40px]">
               <div className="min-w-0">
                 <p className="truncate text-[13.5px] font-medium">{e.name}</p>
-                <p className="truncate text-[12.5px] text-muted-foreground">{[e.email, e.company].filter(Boolean).join(", ")}</p>
+                <p className="truncate text-[12.5px] text-muted-foreground">{[social ? e.profileUrl : e.email, e.company].filter(Boolean).join(", ")}</p>
               </div>
               <div className="col-start-1 md:col-start-auto">
                 <EnrollmentStatusPill status={e.status} stopReason={e.stopReason} />
               </div>
               <p className="col-start-1 text-[12.5px] text-muted-foreground md:col-start-auto">
-                {e.sent} of {steps} sent
-                {e.status === "active" && e.nextRunAt && <span className="block">Email {e.nextStepOrder} around {when(e.nextRunAt)}</span>}
+                {e.sent} of {steps.length} sent
+                {e.status === "active" && e.nextRunAt && <span className="block">{nextLabel(e.nextStepOrder)} around {when(e.nextRunAt)}</span>}
               </p>
-              <p className="col-start-1 truncate text-[12.5px] text-muted-foreground md:col-start-auto">{e.sender ?? "No mailbox"}</p>
+              <p className="col-start-1 truncate text-[12.5px] text-muted-foreground md:col-start-auto">{e.sender ?? (social ? "No account" : "No mailbox")}</p>
               <div className="col-start-2 row-span-4 row-start-1 flex justify-end md:col-start-auto md:row-span-1 md:row-start-auto">
                 {manager && (
                   <DropdownMenu>
@@ -301,7 +318,7 @@ function LeadsTable({ wsId, rows, error, manager, steps, onChanged, onAdd, archi
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-48">
                       <DropdownMenuItem onSelect={() => setPreviewing(e.id)}>
-                        <Eye /> Preview emails
+                        <Eye /> {social ? "Preview messages" : "Preview emails"}
                       </DropdownMenuItem>
                       {(e.status === "active" || e.status === "paused") && (
                         <>

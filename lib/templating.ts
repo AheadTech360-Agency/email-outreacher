@@ -79,6 +79,14 @@ const FOLLOWUP_VARS = [
   "followup.step",
 ]
 
+/** LinkedIn and Instagram campaign messages: written when due, from the lead and what this campaign already sent. */
+const SOCIAL_VARS = [
+  ...FOLLOWUP_VARS.filter((v) => !v.startsWith("email") && v !== "followup.step" && v !== "hook.text"),
+  "social.step",
+  "social.earlier",
+]
+const SOCIAL_KINDS: PromptKind[] = ["linkedin_invite", "linkedin_message", "instagram_message"]
+
 /**
  * What we know about the lead's company, filled by the backend: our research for Apollo companies,
  * Lead Intel's stored data for Lead Intel ones. company.summary is Company Verification's verdict.
@@ -132,6 +140,7 @@ export function availableVariables(kind: PromptKind): string[] {
   if (kind === "sort") return SORT_VARS
   if (kind === "sort_people") return ["sort.lists", "sort.items"]
   if (kind.startsWith("followup")) return [...FOLLOWUP_VARS, ...PRODUCT_VARS]
+  if (SOCIAL_KINDS.includes(kind)) return [...SOCIAL_VARS, ...PRODUCT_VARS]
   const person = [...ICP_VARS, ...LEAD_VARS, "lead.extra.<column>", ...POST_VARS, ...COMPANY_VARS, "company.summary", ...PRODUCT_VARS]
   if (kind === "hook") return person
   if (kind === "email") return [...person, ...HOOK_VARS, ...EXAMPLE_VARS]
@@ -141,7 +150,7 @@ export function availableVariables(kind: PromptKind): string[] {
 
 export function isKnownVariable(name: string, kind: PromptKind): boolean {
   if (kind !== "analysis" && kind !== "sort" && kind !== "sort_people" && /^product\.custom\.[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/.test(name)) return true
-  if (kind !== "analysis" && kind !== "product" && kind !== "sort" && kind !== "sort_people" && kind !== "verify" && !kind.startsWith("followup") && name.startsWith("lead.extra.") && name.length > "lead.extra.".length) return true
+  if (kind !== "analysis" && kind !== "product" && kind !== "sort" && kind !== "sort_people" && kind !== "verify" && !kind.startsWith("followup") && !SOCIAL_KINDS.includes(kind) && name.startsWith("lead.extra.") && name.length > "lead.extra.".length) return true
   return availableVariables(kind).includes(name) || (ALIASES[kind] ?? []).includes(name)
 }
 
