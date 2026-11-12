@@ -1386,6 +1386,8 @@ export interface QuickstartSettings {
   source?: "google_maps" | "existing" | "linkedin"
   /** existing: only the companies in this smart list. */
   smartListId?: string | null
+  /** linkedin: the web searches. brave: free for 1,000 a month. google: Google through Apify, paid per search. */
+  webSearch?: "brave" | "google"
   /** existing: look on LinkedIn at companies where no one with an email is known yet. */
   findPeople?: boolean
   searchTerms: string[]

@@ -34,7 +34,7 @@ import { cn } from "@/lib/utils"
 
 const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
   { key: "find", label: "Find companies", what: "A Google Maps or LinkedIn search, or the companies you already have" },
-  { key: "google", label: "Search the web", what: "Each company's website, Instagram and Facebook, where LinkedIn didn't give them: free" },
+  { key: "google", label: "Search the web", what: "Each company's website, Instagram and Facebook, where LinkedIn didn't give them (Brave, or Google through Apify)" },
   { key: "research", label: "Verify companies", what: "Reads each website and Instagram, checks the ICP's rule, scores the fit" },
   { key: "website", label: "Read websites", what: "The websites not read yet: free, no AI" },
   { key: "people", label: "Fetch LinkedIn profiles", what: "Where no one has a verified email yet: LinkedIn profiles at the qualified companies, with work emails" },

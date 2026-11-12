@@ -38,6 +38,7 @@ const PRICE = {
   write: 0.003, // hook, email and score
   linkedinSearch: 0.004, // a company from LinkedIn's company search, with its details
   brief: 0.002, // a company's brief (Claude Haiku)
+  googleSearch: 0.0045, // a page of Google results through Apify (less on paid Apify plans)
 }
 
 const hasOffer = (icp: ICP) => !!icp.productId || !!icp.offer.trim()
@@ -106,6 +107,8 @@ function NewRun({ wsId }: { wsId: string }) {
   const [n, setN] = useState({ radius: "10", requests: "20", companies: "10", people: "2", leads: "20", posts: "5", limit: "" })
   const [findEmails, setFindEmails] = useState(true)
   const [onlyWithEmail, setOnlyWithEmail] = useState(true)
+  // The LinkedIn option's web searches: Brave (free, 1,000 a month) unless Google through Apify is chosen.
+  const [googleSearch, setGoogleSearch] = useState(false)
   const [starting, setStarting] = useState(false)
 
   const pick = (id: string) => {
@@ -125,7 +128,9 @@ function NewRun({ wsId }: { wsId: string }) {
   const lines = linkedin
     ? [
         { step: `Find ${num("companies")} companies on LinkedIn`, cost: num("companies") * PRICE.linkedinSearch },
-        { step: "Search the web for their websites and socials (free)", cost: 0 },
+        googleSearch
+          ? { step: `Search Google for their websites, socials and people (up to ${num("companies") * 4} searches)`, cost: num("companies") * 4 * PRICE.googleSearch }
+          : { step: `Search the web for their websites, socials and people (Brave, free: up to ${num("companies") * 4} of 1,000 a month)`, cost: 0 },
         { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
         { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
         { step: "Where LinkedIn finds no one: their profiles from a web search (at most)", cost: people * PRICE.profile },
@@ -178,6 +183,7 @@ function NewRun({ wsId }: { wsId: string }) {
         searchTerms: existing ? [] : terms, places: existing ? [] : places, radiusMiles: num("radius"), googleRequests: num("requests"),
         companies: num("companies"), peoplePerCompany: num("people"), titles, findEmails, leads: num("leads"),
         onlyWithEmail, postsPerLead: num("posts"), maxPostAgeDays: icp.maxPostAgeDays ?? 60, spendLimitUsd: limit,
+        webSearch: googleSearch ? "google" : "brave",
       })  // prettier-ignore
       toast.success("Quick Start is running", { description: "You can leave this page: it carries on in the background." })
       router.push(`/quickstart/${run.id}`)
@@ -330,6 +336,15 @@ function NewRun({ wsId }: { wsId: string }) {
             <Checkbox checked={onlyWithEmail} onCheckedChange={(v) => setOnlyWithEmail(v === true)} className="mt-0.5" />
             <span>Only make leads of people with an email (you can&apos;t send to the others)</span>
           </Label>
+          {linkedin && (
+            <Label className="flex cursor-pointer items-start gap-2 font-normal">
+              <Checkbox checked={googleSearch} onCheckedChange={(v) => setGoogleSearch(v === true)} className="mt-0.5" />
+              <span>
+                Search Google instead of Brave, through Apify (about $0.005 a search). Brave is free for 1,000 searches a month
+                and finds less.
+              </span>
+            </Label>
+          )}
         </div>
       </div>
 
