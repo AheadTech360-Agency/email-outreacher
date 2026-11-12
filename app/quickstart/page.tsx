@@ -17,9 +17,11 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { fetchQuickstartRuns, fetchSmartLists, runWhere, startQuickstart, useApi } from "@/lib/api"
+import { fetchQuickstartLimits, fetchQuickstartRuns, fetchSmartLists, runWhere, startQuickstart, useApi } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import { ENRICH_COST } from "@/lib/costs"
 import { formatUsd, shortDate } from "@/lib/format"
+import { isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 import type { ICP } from "@/lib/types"
 
@@ -91,12 +93,18 @@ function QuickstartHome({ wsId }: { wsId: string }) {
 
 function NewRun({ wsId }: { wsId: string }) {
   const { icps } = useStore()
+  const { me } = useAuth()
   const router = useRouter()
+  // A Prospector only has the LinkedIn option, free web search, and the workspace's most per run.
+  const prospector = isProspector(me?.role)
+  const limits = useApi(() => (prospector ? fetchQuickstartLimits(wsId) : Promise.resolve(null)), [wsId, prospector])
+  const cap = limits.data?.spendLimitUsd ?? null
   const ready = icps.filter((i) => i.enabled && hasOffer(i))
-  const [source, setSource] = useState<"google_maps" | "existing" | "linkedin">("google_maps")
+  const [picked, setSource] = useState<"google_maps" | "existing" | "linkedin">("google_maps")
+  const source = prospector ? "linkedin" : picked
   const existing = source === "existing"
   const linkedin = source === "linkedin"
-  const lists = useApi(() => fetchSmartLists(wsId, "company"), [wsId])
+  const lists = useApi(() => (prospector ? Promise.resolve(null) : fetchSmartLists(wsId, "company")), [wsId, prospector])
   const [listId, setListId] = useState("all")
   const [findPeople, setFindPeople] = useState(true)
   const [icpId, setIcpId] = useState("")
@@ -159,7 +167,8 @@ function NewRun({ wsId }: { wsId: string }) {
   // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
   const requestsNeeded = places.length + terms.length * places.length * 3
   const estimate = lines.reduce((sum, l) => sum + l.cost, 0)
-  const limit = n.limit === "" ? Math.max(0.5, Math.ceil(estimate * 1.2 * 100) / 100) : Number(n.limit)
+  const suggested = Math.max(0.5, Math.ceil(estimate * 1.2 * 100) / 100)
+  const limit = n.limit === "" ? (cap !== null ? Math.min(suggested, cap) : suggested) : Number(n.limit)
 
   const errors = [
     !icp && "Pick an ICP",
@@ -172,6 +181,8 @@ function NewRun({ wsId }: { wsId: string }) {
     !(num("leads") >= 1 && num("leads") <= 2000) && "Most leads: 1 to 2,000",
     !(num("posts") >= 0 && num("posts") <= 20) && "Posts per lead: 0 to 20",
     !(limit > 0 && limit <= 500) && "Spend limit: above $0, up to $500",
+    cap !== null && limit > cap && `Spend limit: your runs can spend at most ${formatUsd(cap)}`,
+    prospector && limits.data === undefined && !limits.error && "Loading your spend limit",
   ].filter(Boolean) as string[]
 
   const start = async () => {
@@ -205,6 +216,7 @@ function NewRun({ wsId }: { wsId: string }) {
     <section className="space-y-6 rounded-lg border p-5">
       <h2 className="text-base font-semibold">New run</h2>
 
+      {!prospector && (
       <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Which companies">
         {([
           ["google_maps", "Find new companies", "Search Google Maps, verify what it finds, then find the people there."],
@@ -224,6 +236,12 @@ function NewRun({ wsId }: { wsId: string }) {
           </button>
         ))}
       </div>
+      )}
+      {prospector && (
+        <p className="text-sm text-muted-foreground">
+          Search LinkedIn, find their websites and socials, verify them, find the people, then get a brief on each with the hooks to use.
+        </p>
+      )}
 
       <div className="space-y-1.5">
         <Label>1. Who are you after?</Label>
@@ -240,13 +258,17 @@ function NewRun({ wsId }: { wsId: string }) {
             ))}
           </SelectContent>
         </Select>
-        <p className="text-xs text-muted-foreground">
-          Only ICPs with a product or offer can be picked, so each email says what you sell. Set it on the ICP&apos;s{" "}
-          <Link href="/icps" className="underline">
-            Definition tab
-          </Link>
-          .
-        </p>
+        {prospector ? (
+          <p className="text-xs text-muted-foreground">Only ICPs with a product or offer can be picked. Ask Management to set one up.</p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Only ICPs with a product or offer can be picked, so each email says what you sell. Set it on the ICP&apos;s{" "}
+            <Link href="/icps" className="underline">
+              Definition tab
+            </Link>
+            .
+          </p>
+        )}
       </div>
 
       {existing ? (
@@ -336,7 +358,7 @@ function NewRun({ wsId }: { wsId: string }) {
             <Checkbox checked={onlyWithEmail} onCheckedChange={(v) => setOnlyWithEmail(v === true)} className="mt-0.5" />
             <span>Only make leads of people with an email (you can&apos;t send to the others)</span>
           </Label>
-          {linkedin && (
+          {linkedin && !prospector && (
             <Label className="flex cursor-pointer items-start gap-2 font-normal">
               <Checkbox checked={googleSearch} onCheckedChange={(v) => setGoogleSearch(v === true)} className="mt-0.5" />
               <span>
@@ -374,9 +396,11 @@ function NewRun({ wsId }: { wsId: string }) {
               value={n.limit}
               onChange={field("limit")}
             />
-            <p className="text-xs text-muted-foreground">The run stops when it has spent this much.</p>
+            <p className="text-xs text-muted-foreground">
+              The run stops when it has spent this much.{cap !== null && ` Your runs can spend up to ${formatUsd(cap)}.`}
+            </p>
           </div>
-          <ManagerOnly>
+          <ManagerOnly runner>
             <Button disabled={!!errors.length || starting} onClick={() => void start()} className="mb-6">
               <Rocket /> {starting ? "Starting…" : "Start Quick Start"}
             </Button>

@@ -92,6 +92,19 @@ export function Shell({ sidebarOpen, children }: { sidebarOpen: boolean; childre
       </Centered>
     )
 
+  if (me.role === "prospector")
+    return (
+      <Centered>
+        <h1 className="text-lg font-semibold">Your account can&apos;t open the sending dashboard</h1>
+        <p className="text-sm text-muted-foreground">Prospector accounts only use Quick Start&apos;s LinkedIn search in Coldbrew.</p>
+        <div className="flex justify-center">
+          <Button variant="ghost" onClick={() => void signOut()}>
+            Sign out
+          </Button>
+        </div>
+      </Centered>
+    )
+
   return (
     <SidebarProvider defaultOpen={sidebarOpen}>
       <AppSidebar />

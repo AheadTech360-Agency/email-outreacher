@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { fetchEmailCounts, fetchUsage, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
-import { canManage } from "@/lib/roles"
+import { canManage, isProspector } from "@/lib/roles"
 import { formatUsd } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -61,16 +61,18 @@ export function AppSidebar() {
   // The signed-in person's own role (the users list only loads for admins).
   const { me } = useAuth()
   const isAdmin = me?.role === "admin" || users.find((u) => u.id === currentUserId)?.role === "admin"
+  // A Prospector only has Quick Start: nothing else is loaded or shown.
+  const prospector = isProspector(me?.role)
   // Drafts waiting for a person: a count per status from the backend, not the emails themselves.
   const drafts = useApi(
-    () => (currentWorkspaceId ? fetchEmailCounts(currentWorkspaceId) : Promise.resolve(null)),
-    [currentWorkspaceId, pathname],
+    () => (currentWorkspaceId && !prospector ? fetchEmailCounts(currentWorkspaceId) : Promise.resolve(null)),
+    [currentWorkspaceId, pathname, prospector],
   )
   const toReview = (drafts.data?.draft ?? 0) + (drafts.data?.edited ?? 0)
   // Real spend from the call ledger: Claude (estimated), Apollo and Apify dollars over the last 30 days.
   const usage = useApi(
-    () => (currentWorkspaceId ? fetchUsage(currentWorkspaceId, 30) : Promise.resolve(null)),
-    [currentWorkspaceId, pathname],
+    () => (currentWorkspaceId && !prospector ? fetchUsage(currentWorkspaceId, 30) : Promise.resolve(null)),
+    [currentWorkspaceId, pathname, prospector],
   )
   const spent = (usage.data?.providers ?? []).reduce((sum, p) => sum + p.costUsd, 0)
   const ratio = spent / settings.monthlyBudgetUsd
@@ -78,7 +80,9 @@ export function AppSidebar() {
   // What Sales does every day, in the order it happens: find companies and people, approve emails, see what went out.
   // Setting the campaign up (who to target, what to sell, prompts, mailboxes, costs) is under Setup, for
   // Management and admins only, and starts folded away.
-  const groups: { label: string; items: NavItem[]; setup?: boolean }[] = [
+  const groups: { label: string; items: NavItem[]; setup?: boolean }[] = prospector
+    ? [{ label: "", items: [{ href: "/quickstart", label: "Quick Start", icon: Rocket }] }]
+    : [
     {
       label: "",
       items: [

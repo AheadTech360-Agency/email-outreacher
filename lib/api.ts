@@ -1504,6 +1504,9 @@ export const fetchQuickstartBriefs = (workspaceId: string, runId: string) =>
 
 export const fetchQuickstartRuns = (workspaceId: string) => api<QuickstartRun[]>("/quickstart/runs", { workspaceId })
 
+/** What the start form allows you: a Prospector's most per run (null for everyone else). */
+export const fetchQuickstartLimits = (workspaceId: string) => api<{ spendLimitUsd: number | null }>("/quickstart/limits", { workspaceId })
+
 export const fetchQuickstartRun = (workspaceId: string, runId: string) =>
   api<QuickstartDetail>(`/quickstart/runs/${runId}`, { workspaceId })
 

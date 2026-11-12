@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { Button } from "@/components/ui/button"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { useAuth } from "@/lib/auth"
+import { isProspector } from "@/lib/roles"
 import { authConfigured } from "@/lib/supabase"
 import { StoreProvider } from "@/lib/store"
 
@@ -24,6 +25,11 @@ export function AuthGate({ sidebarOpen, site = "app", children }: { sidebarOpen:
   useEffect(() => {
     if (!dashboard && !isPublic && session === null) router.replace(`/login?next=${encodeURIComponent(pathname)}`)
   }, [dashboard, isPublic, session, pathname, router])
+  // A Prospector only has Quick Start: any other page takes them there (the backend refuses the rest anyway).
+  const elsewhere = !dashboard && !isPublic && isProspector(me?.role) && !pathname.startsWith("/quickstart")
+  useEffect(() => {
+    if (elsewhere) router.replace("/quickstart")
+  }, [elsewhere, router])
 
   if (dashboard) return <>{children}</>
 
@@ -59,6 +65,13 @@ export function AuthGate({ sidebarOpen, site = "app", children }: { sidebarOpen:
             Sign out
           </Button>
         </div>
+      </Centered>
+    )
+
+  if (elsewhere)
+    return (
+      <Centered>
+        <p className="wait-appear text-sm text-muted-foreground">Taking you to Quick Start…</p>
       </Centered>
     )
 

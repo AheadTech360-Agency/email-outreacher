@@ -150,7 +150,7 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
     const left = run.companies.filter((c) => c.status === "review").length
     return (
       <div className="flex gap-2">
-        <ManagerOnly>
+        <ManagerOnly runner>
           <Button
             disabled={left > 0}
             title={left ? `Approve or reject the ${left} below first` : undefined}
@@ -159,7 +159,7 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
             <Play /> Continue
           </Button>
         </ManagerOnly>
-        <ManagerOnly>
+        <ManagerOnly runner>
           <Button variant="outline" onClick={() => void act(stopQuickstart(wsId, run.id), "Stopped")}>
             <Square /> Stop
           </Button>
@@ -169,7 +169,7 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
   }
   if (run.status === "failed")
     return (
-      <ManagerOnly>
+      <ManagerOnly runner>
         <Button onClick={() => void act(resumeQuickstart(wsId, run.id), "Trying that step again")}>
           <Play /> Try again
         </Button>
@@ -178,7 +178,7 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
   if (!live) return null
   return (
     <div className="flex gap-2">
-      <ManagerOnly>
+      <ManagerOnly runner>
         <Button
           variant="outline"
           title="Use this if it hasn't moved for several minutes (the worker restarted)."
@@ -187,7 +187,7 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
           <Play /> Resume
         </Button>
       </ManagerOnly>
-      <ManagerOnly>
+      <ManagerOnly runner>
         <Button variant="outline" onClick={() => setConfirmStop(true)}>
           <Square /> Stop
         </Button>

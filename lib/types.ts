@@ -217,6 +217,8 @@ export interface Settings {
   postsPerLead: number
   maxPostAgeDays: number
   monthlyBudgetUsd: number
+  /** The most one Prospector's Quick Start run may spend. Admins set it. */
+  prospectorRunLimitUsd?: number
   scoring: ScoringSettings
   companyApproval?: CompanyApprovalSettings
 }
@@ -238,9 +240,10 @@ export interface ScoringSettings {
   dailyAutoSendCap: number
 }
 
-export type Role = "sales" | "management" | "admin"
+/** prospector: only Quick Start's LinkedIn option, and only the companies and people from the runs they start. */
+export type Role = "prospector" | "sales" | "management" | "admin"
 
-export const ROLES: Role[] = ["sales", "management", "admin"]
+export const ROLES: Role[] = ["prospector", "sales", "management", "admin"]
 
 export type UserStatus = "active" | "invited" | "deactivated"
 

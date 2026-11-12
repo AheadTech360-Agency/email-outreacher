@@ -2,12 +2,13 @@
 
 import { cloneElement, type ReactElement } from "react"
 import { useAuth } from "@/lib/auth"
-import { MANAGERS_ONLY_HINT, canManage } from "@/lib/roles"
+import { MANAGERS_ONLY_HINT, canManage, canRun } from "@/lib/roles"
 
 /** A Management-only button: for Sales it's disabled, and hovering says why (the backend refuses it anyway). */
-export function ManagerOnly({ children }: { children: ReactElement<{ disabled?: boolean }> }) {
+export function ManagerOnly({ children, runner = false }: { children: ReactElement<{ disabled?: boolean }>; runner?: boolean }) {
   const { me } = useAuth()
-  if (canManage(me?.role)) return children
+  // runner: a Quick Start run's own controls, which a Prospector has on their runs too.
+  if (runner ? canRun(me?.role) : canManage(me?.role)) return children
   return (
     <span title={MANAGERS_ONLY_HINT} className="inline-flex">
       {cloneElement(children, { disabled: true })}

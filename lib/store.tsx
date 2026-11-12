@@ -153,9 +153,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [workspacesTick])
 
+  // A Prospector only has Quick Start: settings and prompts aren't theirs to read (the backend refuses them).
+  const prospector = me?.role === "prospector"
   // Settings belong to the workspace: everyone in it sees the same, saved in the backend.
   useEffect(() => {
-    if (!currentWorkspaceId) return
+    if (!currentWorkspaceId || prospector) return
     let live = true
     api
       .fetchGeneralSettings(currentWorkspaceId)
@@ -164,7 +166,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false
     }
-  }, [currentWorkspaceId])
+  }, [currentWorkspaceId, prospector])
   const settings = loadedSettings?.workspaceId === currentWorkspaceId ? loadedSettings.settings : DEFAULT_SETTINGS
 
   const saveSettings: Store["saveSettings"] = async (next) => {
@@ -227,7 +229,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Prompts belong to the workspace. The backend creates its built-in defaults on the first read.
   useEffect(() => {
-    if (!currentWorkspaceId) return
+    if (!currentWorkspaceId || prospector) return
     let live = true
     api
       .fetchPrompts(currentWorkspaceId)
@@ -246,7 +248,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => {
       live = false
     }
-  }, [currentWorkspaceId, promptsTick])
+  }, [currentWorkspaceId, promptsTick, prospector])
 
   const reloadPrompts = useCallback(() => {
     setPromptsStatus("loading")

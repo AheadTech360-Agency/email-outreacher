@@ -70,24 +70,29 @@ function SettingsView() {
     postsPerLead: String(settings.postsPerLead),
     maxPostAgeDays: String(settings.maxPostAgeDays),
     monthlyBudgetUsd: String(settings.monthlyBudgetUsd),
+    prospectorRunLimitUsd: String(settings.prospectorRunLimitUsd ?? 5),
   })
 
   const parsed = {
     postsPerLead: Number(draft.postsPerLead),
     maxPostAgeDays: Number(draft.maxPostAgeDays),
     monthlyBudgetUsd: Number(draft.monthlyBudgetUsd),
+    prospectorRunLimitUsd: Number(draft.prospectorRunLimitUsd),
   }
   const errors = {
     postsPerLead: !Number.isInteger(parsed.postsPerLead) || parsed.postsPerLead < 1 || parsed.postsPerLead > 20 ? "Use a whole number from 1 to 20" : "",
     maxPostAgeDays: !Number.isInteger(parsed.maxPostAgeDays) || parsed.maxPostAgeDays < 1 ? "Use a whole number of days, 1 or more" : "",
     monthlyBudgetUsd: !(parsed.monthlyBudgetUsd > 0) ? "Enter a budget above $0" : "",
+    prospectorRunLimitUsd:
+      !(parsed.prospectorRunLimitUsd >= 0 && parsed.prospectorRunLimitUsd <= 10000) ? "Enter an amount from $0 to $10,000" : "",
   }
   const valid = !Object.values(errors).some(Boolean)
   const dirty =
     draft.defaultModel !== settings.defaultModel ||
     parsed.postsPerLead !== settings.postsPerLead ||
     parsed.maxPostAgeDays !== settings.maxPostAgeDays ||
-    parsed.monthlyBudgetUsd !== settings.monthlyBudgetUsd
+    parsed.monthlyBudgetUsd !== settings.monthlyBudgetUsd ||
+    parsed.prospectorRunLimitUsd !== (settings.prospectorRunLimitUsd ?? 5)
 
   const ratio = spent / settings.monthlyBudgetUsd
   const over = ratio >= 1
@@ -99,7 +104,7 @@ function SettingsView() {
       .then(() => toast.success("Settings saved for everyone in this workspace"))
       .catch((e: unknown) => toast.error("Couldn't save settings", { description: e instanceof Error ? e.message : undefined }))
 
-  const numberField = (key: "postsPerLead" | "maxPostAgeDays" | "monthlyBudgetUsd", label: string, hint: string) => (
+  const numberField = (key: "postsPerLead" | "maxPostAgeDays" | "monthlyBudgetUsd" | "prospectorRunLimitUsd", label: string, hint: string) => (
     <div className="space-y-1.5">
       <Label htmlFor={key}>{label}</Label>
       <Input
@@ -223,7 +228,10 @@ function SettingsView() {
               {numberField("postsPerLead", "Posts per lead", "Fetched per source.")}
               {numberField("maxPostAgeDays", "Max post age (days)", "Older posts are ignored.")}
             </div>
-            {numberField("monthlyBudgetUsd", "Monthly budget (USD)", "You'll see a warning past 80%.")}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {numberField("monthlyBudgetUsd", "Monthly budget (USD)", "You'll see a warning past 80%.")}
+              {numberField("prospectorRunLimitUsd", "Most a Prospector's run may spend (USD)", "Each LinkedIn search they start stops here. Admins only.")}
+            </div>
             <div className="flex justify-end pt-1">
               <Button type="submit" disabled={!valid || !dirty}>
                 Save settings
