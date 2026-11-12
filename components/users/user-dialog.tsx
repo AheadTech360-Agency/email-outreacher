@@ -1,14 +1,16 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Copy, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
+import { ProspectorAccess, accessKey } from "@/components/users/prospector-access"
 import { RolePicker } from "@/components/users/role-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { type AccessGrant, fetchUserAccess, saveUserAccess } from "@/lib/api"
 import { EMAIL_PATTERN } from "@/lib/format"
 import { ROLE_LABEL, otherActiveAdmins } from "@/lib/roles"
 import { useStore } from "@/lib/store"
@@ -34,6 +36,21 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState("")
   const [touched, setTouched] = useState({ name: false, email: false, password: false })
+  // A Prospector sees only what's theirs and what's shared here: each item to use, or to edit.
+  const prospector = role === "prospector"
+  const [grants, setGrants] = useState<Map<string, AccessGrant>>(new Map())
+  const [grantsLoaded, setGrantsLoaded] = useState(!user)
+  useEffect(() => {
+    if (!user || user.role !== "prospector") return
+    let live = true
+    fetchUserAccess(user.id)
+      .then((rows) => live && setGrants(new Map(rows.map((g) => [accessKey(g.kind, g.resourceId), g]))))
+      .catch((e: unknown) => live && setFailure(`Couldn't load what they can see: ${e instanceof Error ? e.message : "unknown error"}`))
+      .finally(() => live && setGrantsLoaded(true))
+    return () => {
+      live = false
+    }
+  }, [user])
 
   const isSelf = user?.id === currentUserId
   const lastAdmin = !!user && user.role === "admin" && otherActiveAdmins(users, user.id) === 0
@@ -59,16 +76,41 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
       return
     }
     const ids = allWorkspaces ? workspaces.map((w) => w.id) : workspaceIds
+    // Only what's in a workspace they keep is shared.
+    const shared = [...grants.values()].filter((g) => ids.includes(g.workspaceId))
     if (user) {
-      updateUser(user.id, { name: name.trim(), role, workspaceIds: ids })
-      toast.success(`Saved ${name.trim()}`)
-      onClose()
+      if (!prospector) {
+        void updateUser(user.id, { name: name.trim(), role, workspaceIds: ids })
+        toast.success(`Saved ${name.trim()}`)
+        onClose()
+        return
+      }
+      setSaving(true)
+      setFailure("")
+      try {
+        // The role and workspaces first: sharing is checked against them.
+        await updateUser(user.id, { name: name.trim(), role, workspaceIds: ids })
+        await saveUserAccess(user.id, shared)
+        toast.success(`Saved ${name.trim()}`)
+        onClose()
+      } catch (e) {
+        setFailure(`Saved their role, but not what they can see: ${e instanceof Error ? e.message : "unknown error"}`)
+      } finally {
+        setSaving(false)
+      }
       return
     }
     setSaving(true)
     setFailure("")
     try {
-      const signIn = await inviteUser({ name, email, role, workspaceIds: ids, password })
+      const { signIn, id } = await inviteUser({ name, email, role, workspaceIds: ids, password })
+      if (prospector && shared.length) {
+        try {
+          await saveUserAccess(id, shared)
+        } catch (e) {
+          toast.error("They were added, but not what they can see", { description: e instanceof Error ? e.message : undefined })
+        }
+      }
       toast.success(`Added ${name.trim()}`, {
         description:
           signIn === "created"
@@ -217,14 +259,29 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
               </>
             )}
           </fieldset>
+
+          {prospector && (
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">What they can see</legend>
+              <p className="text-[13px] text-muted-foreground">
+                Prospectors see the ICPs, products and smart lists they make, and the ones ticked here. Without Can edit, they
+                only use it. They also see the companies their own runs find and those in their lists.
+              </p>
+              {grantsLoaded ? (
+                <ProspectorAccess workspaces={workspaces.filter((w) => workspaceIds.includes(w.id))} grants={grants} onChange={setGrants} />
+              ) : (
+                <p className="text-[13px] text-muted-foreground">Loading…</p>
+              )}
+            </fieldset>
+          )}
         </form>
         {failure && <p className="text-sm text-destructive">{failure}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="user-form" disabled={saving}>
-            {user ? "Save changes" : saving ? "Adding…" : "Add user"}
+          <Button type="submit" form="user-form" disabled={saving || !grantsLoaded}>
+            {user ? (saving ? "Saving…" : "Save changes") : saving ? "Adding…" : "Add user"}
           </Button>
         </DialogFooter>
       </DialogContent>

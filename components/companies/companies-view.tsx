@@ -44,7 +44,7 @@ import {
 } from "@/lib/api"
 import { formatUsd } from "@/lib/format"
 import { useAuth } from "@/lib/auth"
-import { canManage } from "@/lib/roles"
+import { canManage, isProspector } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 const MAX_RESEARCH = 10 // per request; bigger selections run in groups of 10
@@ -79,6 +79,8 @@ export function CompaniesView({ initialIcp }: { initialIcp: string }) {
 function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const router = useRouter()
   const { me } = useAuth()
+  // A Prospector reads the companies their runs found (and those in their lists): no exports or actions.
+  const prospector = isProspector(me?.role)
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [icpId, setIcpId] = useState(initialIcp)
   // No ICP picked (or an unknown one) shows every company.
@@ -228,7 +230,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           <Input aria-label="Search companies" placeholder="Search name or domain" className="pl-8" value={query} onChange={(e) => (setQuery(e.target.value), setPage(1))} />
         </div>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
-          <Button
+          {!prospector && <Button
             variant="outline"
             title="Every company shown for this ICP (or all), with research, score and smart list"
             onClick={() =>
@@ -238,7 +240,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             }
           >
             <FileDown /> Export
-          </Button>
+          </Button>}
           <ManagerOnly>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -322,20 +324,22 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                 </Button>
               </ManagerOnly>
             )}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline" disabled={!!busy}>
-                  More <ChevronDown />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {more.map((a) => (
-                  <DropdownMenuItem key={a.label} disabled={!canManage(me?.role) || a.disabled} onSelect={a.run}>
-                    <a.icon /> {a.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {!prospector && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="outline" disabled={!!busy}>
+                    More <ChevronDown />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {more.map((a) => (
+                    <DropdownMenuItem key={a.label} disabled={!canManage(me?.role) || a.disabled} onSelect={a.run}>
+                      <a.icon /> {a.label}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
         </div>
       )}

@@ -28,6 +28,10 @@ export interface ICP {
   /** Lower is checked first when rules overlap. */
   priority: number
   enabled: boolean
+  /** A Prospector may change it (theirs, or shared to edit). Always true for everyone else. */
+  canEdit?: boolean
+  /** A Prospector created it, so may archive it. Always true for everyone else. */
+  isOwner?: boolean
   sources: IcpSource[]
   anyOf: string[]
   noneOf: string[]

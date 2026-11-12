@@ -12,6 +12,12 @@ import { StoreProvider } from "@/lib/store"
 
 // The one page anyone can open.
 const PUBLIC = ["/login"]
+// A Prospector's pages: Quick Start, Companies, People, Smart lists, Products, and an ICP's definition (not its leads,
+// prompts or review).
+const PROSPECTOR_PAGES = [
+  /^\/quickstart(\/|$)/, /^\/companies(\/|$)/, /^\/people(\/|$)/, /^\/smart-lists(\/|$)/, /^\/products(\/|$)/,
+  /^\/icps(\/[^/]+)?\/?$/,
+]
 
 /** Shows the app to a signed-in person and sends everyone else to /login. */
 export function AuthGate({ sidebarOpen, site = "app", children }: { sidebarOpen: boolean; site?: "app" | "config"; children: ReactNode }) {
@@ -25,8 +31,8 @@ export function AuthGate({ sidebarOpen, site = "app", children }: { sidebarOpen:
   useEffect(() => {
     if (!dashboard && !isPublic && session === null) router.replace(`/login?next=${encodeURIComponent(pathname)}`)
   }, [dashboard, isPublic, session, pathname, router])
-  // A Prospector only has Quick Start: any other page takes them there (the backend refuses the rest anyway).
-  const elsewhere = !dashboard && !isPublic && isProspector(me?.role) && !pathname.startsWith("/quickstart")
+  // A Prospector has only their pages: any other takes them to Quick Start (the backend refuses the rest anyway).
+  const elsewhere = !dashboard && !isPublic && isProspector(me?.role) && !PROSPECTOR_PAGES.some((page) => page.test(pathname))
   useEffect(() => {
     if (elsewhere) router.replace("/quickstart")
   }, [elsewhere, router])

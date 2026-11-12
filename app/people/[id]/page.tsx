@@ -17,6 +17,7 @@ import { Pill, type PillTone } from "@/components/status"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useAuth } from "@/lib/auth"
 import { fetchCompanyContent, fetchEmails, fetchPipelineCompany, fetchPosts, fetchStakeholder, useApi } from "@/lib/api"
 import { shortDate } from "@/lib/format"
 
@@ -53,7 +54,10 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
   const company = useApi(() => (companyId ? fetchPipelineCompany(wsId, companyId) : Promise.resolve(null)), [wsId, companyId])
   const content = useApi(() => (companyId ? fetchCompanyContent(wsId, companyId) : Promise.resolve(null)), [wsId, companyId])
   const own = useApi(() => (leadId ? fetchPosts(wsId, leadId) : Promise.resolve([])), [wsId, leadId])
-  const emails = useApi(() => (leadId ? fetchEmails(wsId, { leadId }) : Promise.resolve([])), [wsId, leadId])
+  // A Prospector doesn't see emails written to people (that's outreach, not theirs).
+  const { me } = useAuth()
+  const prospector = me?.role === "prospector"
+  const emails = useApi(() => (leadId && !prospector ? fetchEmails(wsId, { leadId }) : Promise.resolve([])), [wsId, leadId, prospector])
 
   if (person.error && !p)
     return (

@@ -76,8 +76,9 @@ interface Store {
   currentWorkspaceId: string
   setCurrentWorkspace: (id: string) => void
   /** Adds them and makes their sign-in. Waits for the answer: it can be refused (a weak password, say). */
-  inviteUser: (input: Pick<User, "name" | "email" | "role" | "workspaceIds"> & { password: string }) => Promise<"created" | "existing">
-  updateUser: (id: string, patch: Partial<Pick<User, "name" | "role" | "workspaceIds" | "status">>) => void
+  inviteUser: (input: Pick<User, "name" | "email" | "role" | "workspaceIds"> & { password: string }) => Promise<{ signIn: "created" | "existing"; id: string }>
+  /** Shown at once; the returned promise settles when the backend has it (a failure is shown and the list reloaded). */
+  updateUser: (id: string, patch: Partial<Pick<User, "name" | "role" | "workspaceIds" | "status">>) => Promise<void>
   removeUser: (id: string) => void
   /** Saved in the backend. Rejects with the backend's reason (e.g. the name is taken). */
   createWorkspace: (input: { name: string; description: string; memberIds: string[] }) => Promise<Workspace>
@@ -261,7 +262,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const createIcp: Store["createIcp"] = async (input, outreach) => {
-    const raw = await api.createIcp(input)
+    const raw = await api.createIcp(input, currentWorkspaceId)
     let icp = api.toIcp(raw)
     let warning: string | undefined
     if (outreach && Object.keys(outreach).length) {
@@ -373,13 +374,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const inviteUser: Store["inviteUser"] = async (input) => {
     const { signIn, ...user } = await api.addUserApi({ ...input, name: input.name.trim(), email: input.email.trim().toLowerCase() })
     setUsers((list) => [...list, user])
-    return signIn
+    return { signIn, id: user.id }
   }
 
   const updateUser: Store["updateUser"] = (id, patch) => {
     setUsers((list) => list.map((u) => (u.id === id ? { ...u, ...patch } : u)))
     const { status, ...rest } = patch
-    void save("Couldn't save the change", api.updateUserApi(id, status === "invited" ? rest : { ...rest, ...(status && { status }) }))
+    return save("Couldn't save the change", api.updateUserApi(id, status === "invited" ? rest : { ...rest, ...(status && { status }) }))
   }
 
   const removeUser: Store["removeUser"] = (id) => {

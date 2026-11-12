@@ -212,7 +212,7 @@ export interface ApiIcp
     ICP,
     | "id" | "name" | "industry" | "priority" | "enabled" | "sources" | "anyOf" | "noneOf" | "websiteAnyOf"
     | "instagramAnyOf" | "requireAll" | "minFollowers" | "maxFollowers" | "searchTerms" | "requiresWebsite"
-    | "minReviews" | "places" | "companyCount" | "createdAt" | "updatedAt"
+    | "minReviews" | "places" | "companyCount" | "createdAt" | "updatedAt" | "canEdit" | "isOwner"
   > {
   profile: ApiIcpProfile | null
   /** After a create or rename: what happened to its CheapSequencer campaign. */
@@ -549,6 +549,28 @@ export const updateUserApi = (
 
 export const removeUserApi = (id: string) => api<void>(`/users/${id}`, { method: "DELETE" })
 
+// ---------- What a Prospector may see (admins) ----------
+
+export type AccessKind = "icp" | "product" | "smart_list"
+
+/** One ICP, product or smart list a Prospector may see; isOwner: they made it (theirs to edit and delete). */
+export interface AccessGrant {
+  kind: AccessKind
+  resourceId: string
+  workspaceId: string
+  canEdit: boolean
+  isOwner: boolean
+}
+
+export const fetchUserAccess = (userId: string) => api<AccessGrant[]>(`/users/${userId}/access`, { fresh: true })
+
+/** Replace what's shared with them (what they made stays theirs whatever is sent). */
+export const saveUserAccess = (userId: string, grants: AccessGrant[]) =>
+  api<AccessGrant[]>(`/users/${userId}/access`, {
+    method: "PUT",
+    body: { grants: grants.filter((g) => !g.isOwner).map(({ kind, resourceId, workspaceId, canEdit }) => ({ kind, resourceId, workspaceId, canEdit })) },
+  })
+
 // ---------- Stakeholders (Apollo) ----------
 
 export interface Stakeholder {
@@ -647,7 +669,8 @@ export type IcpCreate = Pick<
   | "requireAll" | "minFollowers" | "maxFollowers" | "searchTerms" | "requiresWebsite" | "minReviews" | "places"
 >
 
-export const createIcp = (body: IcpCreate) => api<ApiIcp>("/icps", { method: "POST", body })
+/** The workspace is sent so a Prospector's new ICP is theirs (everyone else's ICPs are the whole team's). */
+export const createIcp = (body: IcpCreate, workspaceId?: string) => api<ApiIcp>("/icps", { workspaceId, method: "POST", body })
 
 /** Turn an ICP off and archive its campaign. Refused while the campaign still has leads in a sequence. */
 export const archiveIcp = (workspaceId: string, id: string) => api<ApiIcp>(`/icps/${id}/archive`, { workspaceId, method: "POST" })
@@ -1222,6 +1245,9 @@ export interface ProductFields {
 
 export interface Product extends ProductFields {
   archived: boolean
+  /** A Prospector may change it / created it (and so may delete it). Always true for everyone else. */
+  canEdit?: boolean
+  isOwner?: boolean
   id: string
   createdAt: string
   updatedAt: string
@@ -1545,6 +1571,9 @@ export interface SmartListIcpDraft {
 
 export interface SmartList {
   id: string
+  /** A Prospector may change it (rename, add to it) / created it (and so may delete it). Always true for everyone else. */
+  canEdit?: boolean
+  isOwner?: boolean
   kind: SmartListKind
   name: string
   count: number

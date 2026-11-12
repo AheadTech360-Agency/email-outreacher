@@ -20,6 +20,8 @@ export default function DefinitionPage() {
 
 function DefinitionForm({ icp }: { icp: ICP }) {
   const { updateIcp, settings } = useStore()
+  // Shared with a Prospector to use only: they read it, and nothing here can be changed.
+  const readOnly = icp.canEdit === false
   const [draft, setDraft] = useState<IcpDraft>(() => toDraft(icp))
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -49,14 +51,16 @@ function DefinitionForm({ icp }: { icp: ICP }) {
   return (
     <div className="space-y-4">
       <div className="sticky top-0 z-10 -mx-4 -mt-6 flex items-center gap-2 border-b bg-background px-4 py-2.5 md:-mx-8 md:px-8">
-        {dirty ? (
+        {readOnly ? (
+          <span className="text-xs text-muted-foreground">Shared with you to use. Ask an admin if you need to change it.</span>
+        ) : dirty ? (
           <Badge variant="outline" className="border-amber-500/40 text-amber-700 dark:text-amber-300">
             Unsaved changes
           </Badge>
         ) : (
           <span className="text-xs text-muted-foreground">All changes saved</span>
         )}
-        <div className="ml-auto flex gap-2">
+        <div className={readOnly ? "hidden" : "ml-auto flex gap-2"}>
           <Button variant="outline" disabled={!dirty || saving} onClick={() => setDraft(toDraft(icp))}>
             Discard
           </Button>
@@ -66,7 +70,7 @@ function DefinitionForm({ icp }: { icp: ICP }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+      <fieldset disabled={readOnly} className="grid min-w-0 gap-4 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
           <Card>
             <CardHeader>
@@ -78,9 +82,11 @@ function DefinitionForm({ icp }: { icp: ICP }) {
                     companies against. Stored in Lead Intel&apos;s ICP table, which this app keeps using.
                   </CardDescription>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil /> Edit
-                </Button>
+                {!readOnly && (
+                  <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                    <Pencil /> Edit
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -131,7 +137,7 @@ function DefinitionForm({ icp }: { icp: ICP }) {
             </CardContent>
           </Card>
         </div>
-      </div>
+      </fieldset>
       {editing && <EditIcpDefinition icp={icp} onClose={() => setEditing(false)} />}
     </div>
   )

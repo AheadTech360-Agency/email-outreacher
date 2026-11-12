@@ -12,6 +12,8 @@ import { PipelineStrip } from "@/components/status"
 import { useIcpParam } from "@/hooks/use-icp"
 import { leadCount, pipelineOf } from "@/lib/selectors"
 import { useLeadSummary } from "@/lib/lists"
+import { useAuth } from "@/lib/auth"
+import { isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
@@ -19,8 +21,11 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
   const icp = useIcpParam()
   const pathname = usePathname()
   const { leadsVersion, currentWorkspaceId, icpsStatus, icpsError, reloadIcps } = useStore()
+  const { me } = useAuth()
+  // A Prospector has only the definition: no leads, prompts or review.
+  const prospector = isProspector(me?.role)
   // The ICP's leads per status, counted by the server.
-  const summary = useLeadSummary(currentWorkspaceId, leadsVersion)
+  const summary = useLeadSummary(prospector ? null : currentWorkspaceId, leadsVersion)
 
   // ICPs load from the backend; only call it missing once they have.
   if (!icp && icpsStatus === "error")
@@ -41,12 +46,14 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
   const statuses = summary.of(icp.id)
   const counts = pipelineOf(statuses)
   const base = `/icps/${icp.id}`
-  const tabs = [
-    { href: "", label: "Definition" },
-    { href: "/prompts", label: "Prompts" },
-    { href: "/leads", label: "Leads", count: leadCount(statuses), also: ["/import"] },
-    { href: "/review", label: "Review", count: counts.review },
-  ]
+  const tabs = prospector
+    ? [{ href: "", label: "Definition" }]
+    : [
+        { href: "", label: "Definition" },
+        { href: "/prompts", label: "Prompts" },
+        { href: "/leads", label: "Leads", count: leadCount(statuses), also: ["/import"] },
+        { href: "/review", label: "Review", count: counts.review },
+      ]
 
   return (
     <>
@@ -63,7 +70,7 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
           description={`${icp.enabled ? "" : "Archived · "}${icp.description || `${icp.industry} · from Lead Intel`}`}
           actions={<IcpLifecycleActions icp={icp} />}
         >
-          <PipelineStrip statuses={statuses} className="max-w-3xl" />
+          {!prospector && <PipelineStrip statuses={statuses} className="max-w-3xl" />}
         </PageHeader>
       </div>
       <nav className="flex gap-6 overflow-x-auto overflow-y-hidden border-b px-4 md:px-8" aria-label="ICP sections">

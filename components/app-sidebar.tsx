@@ -81,7 +81,19 @@ export function AppSidebar() {
   // Setting the campaign up (who to target, what to sell, prompts, mailboxes, costs) is under Setup, for
   // Management and admins only, and starts folded away.
   const groups: { label: string; items: NavItem[]; setup?: boolean }[] = prospector
-    ? [{ label: "", items: [{ href: "/quickstart", label: "Quick Start", icon: Rocket }] }]
+    ? [
+        {
+          label: "",
+          items: [
+            { href: "/quickstart", label: "Quick Start", icon: Rocket },
+            { href: "/companies", label: "Companies", icon: Building2 },
+            { href: "/people", label: "People", icon: UserSearch },
+            { href: "/smart-lists", label: "Smart lists", icon: ListTree },
+            { href: "/icps", label: "Who you target (ICPs)", icon: Target },
+            { href: "/products", label: "What you sell", icon: Package },
+          ],
+        },
+      ]
     : [
     {
       label: "",

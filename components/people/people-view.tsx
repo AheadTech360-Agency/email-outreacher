@@ -43,7 +43,7 @@ import {
 } from "@/lib/api"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useAuth } from "@/lib/auth"
-import { canManage } from "@/lib/roles"
+import { canManage, isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 
 const MAX_REVEAL = 25
@@ -94,6 +94,8 @@ export function PeopleView() {
 function PeopleList({ wsId }: { wsId: string }) {
   const router = useRouter()
   const { me } = useAuth()
+  // A Prospector reads the people at their companies: no exports, adding or actions.
+  const prospector = isProspector(me?.role)
   // Adding, importing and revealing people can make leads, and fetching changes post counts, so the
   // shared leads list reloads whenever this list does.
   const { reloadLeads } = useStore()
@@ -315,15 +317,15 @@ function PeopleList({ wsId }: { wsId: string }) {
           </SelectContent>
         </Select>
         <div className="flex flex-wrap gap-2 sm:ml-auto">
-          <Button
+          {!prospector && <Button
             size="sm"
             variant="outline"
             title="Everyone here: email, ICP, smart list and whether they're a lead. Apollo's format is on Smart lists."
             onClick={() => void downloadCsv(wsId, "/stakeholders/export.csv", "people.csv").catch((e) => toast.error(e.message))}
           >
             <Download /> Export
-          </Button>
-          <DropdownMenu>
+          </Button>}
+          {!prospector && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm">
                 <UserPlus /> Add people <ChevronDown />
@@ -337,7 +339,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                 <UserPlus /> Add one person
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
         </div>
       </div>
 
@@ -380,7 +382,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                 </Button>
               </ManagerOnly>
             )}
-            <DropdownMenu>
+            {!prospector && <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="sm" variant="outline" disabled={!!busy}>
                   More <ChevronDown />
@@ -393,7 +395,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu>}
           </div>
         </div>
       )}

@@ -164,7 +164,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
               </ManagerOnly>
             )}
             {primary}
-            <DropdownMenu>
+            {me?.role !== "prospector" && <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" size="icon" aria-label="More actions">
                   <MoreHorizontal />
@@ -206,7 +206,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                   </>
                 )}
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu>}
           </>
         }
       />

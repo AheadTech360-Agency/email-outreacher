@@ -19,14 +19,17 @@ import type { ICP } from "@/lib/types"
 
 type Pending = "archive" | "delete" | null
 
-/** Archive, restore or delete an ICP, along with its CheapSequencer campaign. Management and admins only. */
+/** Archive, restore or delete an ICP, along with its CheapSequencer campaign. Management and admins; a Prospector
+ * archives or restores only their own ICPs. */
 export function IcpLifecycleActions({ icp }: { icp: ICP }) {
   const { me } = useAuth()
   const { setIcpArchived, deleteIcp } = useStore()
   const router = useRouter()
   const [pending, setPending] = useState<Pending>(null)
   const [busy, setBusy] = useState(false)
-  if (me?.role !== "admin" && me?.role !== "management") return null
+  // A Prospector archives and restores only an ICP they created, and never deletes one (that removes Lead Intel's row).
+  const prospector = me?.role === "prospector"
+  if (prospector ? !icp.isOwner : me?.role !== "admin" && me?.role !== "management") return null
 
   const archive = async (archived: boolean) => {
     setBusy(true)
@@ -72,10 +75,14 @@ export function IcpLifecycleActions({ icp }: { icp: ICP }) {
               <ArchiveRestore /> Restore ICP
             </DropdownMenuItem>
           )}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setPending("delete")}>
-            <Trash2 /> Delete ICP
-          </DropdownMenuItem>
+          {!prospector && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setPending("delete")}>
+                <Trash2 /> Delete ICP
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 

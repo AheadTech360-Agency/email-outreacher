@@ -19,11 +19,71 @@ import { fetchEmails, useApi } from "@/lib/api"
 import { flagLabel } from "@/lib/format"
 import { leadCount, pipelineOf } from "@/lib/selectors"
 import { useLeadSummary } from "@/lib/lists"
+import { useAuth } from "@/lib/auth"
+import { isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 
 const LOW_CONFIDENCE = 60
 
 export default function IcpsPage() {
+  const { me } = useAuth()
+  return isProspector(me?.role) ? <ProspectorIcps /> : <TeamIcps />
+}
+
+/** A Prospector's ICPs: theirs and those shared with them. Who they target, without leads or drafts. */
+function ProspectorIcps() {
+  const { icps, icpsStatus, icpsError, reloadIcps } = useStore()
+  const [archiveFilter, setArchiveFilter] = useState("active")
+  const [query, setQuery] = useState("")
+  const rows = icps
+    .filter((icp) => archiveFilter === "all" || (archiveFilter === "archived" ? !icp.enabled : icp.enabled))
+    .filter((icp) => textMatches(query, icp.name, icp.industry))
+  const newButton = (
+    <Button asChild>
+      <Link href="/icps/new">
+        <Plus /> New ICP
+      </Link>
+    </Button>
+  )
+  return (
+    <>
+      <PageHeader title="ICPs" description="Yours, and those shared with you. Pick one on Quick Start to find companies for it." actions={newButton} />
+      <div className="space-y-4 px-4 pb-8 md:px-8">
+        <ArchiveFilter value={archiveFilter} onChange={setArchiveFilter} />
+        <Input aria-label="Search ICPs" placeholder="Search ICP name or industry" value={query} onChange={(e) => setQuery(e.target.value)} />
+        {icpsStatus === "error" ? (
+          <BackendError message={icpsError ?? ""} onRetry={reloadIcps} />
+        ) : icpsStatus === "loading" ? (
+          <Skeleton className="h-24 w-full" />
+        ) : rows.length === 0 ? (
+          <EmptyState icon={Target} title="No ICPs here" description="Make one to say who you're looking for, or ask an admin to share one." action={newButton} />
+        ) : (
+          <ul className="divide-y divide-rule overflow-hidden rounded-lg border">
+            {rows.map((icp) => (
+              <li key={icp.id} className="flex flex-wrap items-center gap-3 px-5 py-4 hover:bg-muted/60">
+                <div className="min-w-0 flex-1">
+                  <Link href={`/icps/${icp.id}`} className="block truncate text-[15px] font-semibold hover:underline">
+                    {icp.name}
+                  </Link>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    <Pill>{icp.industry}</Pill>
+                    {!icp.enabled && <Pill tone="warning">Archived</Pill>}
+                    <span className="text-xs text-muted-foreground">
+                      {icp.isOwner ? "Yours" : icp.canEdit ? "Shared with you to edit" : "Shared with you to use"}
+                    </span>
+                  </div>
+                </div>
+                <IcpLifecycleActions icp={icp} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </>
+  )
+}
+
+function TeamIcps() {
   const { icps, icpsStatus, icpsError, reloadIcps, workspacesStatus, leadsVersion, settings, currentWorkspaceId } = useStore()
   // Each ICP's leads per status, counted by the server (every lead, queued or not, as before).
   const summary = useLeadSummary(currentWorkspaceId, leadsVersion)

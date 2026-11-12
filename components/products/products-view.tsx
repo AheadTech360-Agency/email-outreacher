@@ -32,7 +32,9 @@ import {
   updateProduct,
   useApi,
 } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
 import { shortDate } from "@/lib/format"
+import { isProspector } from "@/lib/roles"
 
 const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url" | "customFields" | "notes">; label: string; hint: string; placeholder: string; rows: number }[] = [
   {
@@ -89,6 +91,9 @@ export function ProductsView() {
 }
 
 function Products({ wsId }: { wsId: string }) {
+  // A Prospector: their own products and those shared with them; they delete only their own, and don't archive.
+  const { me } = useAuth()
+  const prospector = isProspector(me?.role)
   const products = useApi(() => fetchProducts(wsId), [wsId])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [editing, setEditing] = useState<Product | "new" | null>(null)
@@ -115,7 +120,7 @@ function Products({ wsId }: { wsId: string }) {
           title="No products in this view"
           description="Add what you sell, then pick a product on each ICP. Its details become available to that ICP's prompts."
           action={
-            <ManagerOnly><Button onClick={() => setEditing("new")}>
+            <ManagerOnly runner><Button onClick={() => setEditing("new")}>
               <Plus /> Add a product
             </Button></ManagerOnly>
           }
@@ -123,7 +128,7 @@ function Products({ wsId }: { wsId: string }) {
       ) : (
         <>
           <div className="flex justify-end">
-            <ManagerOnly><Button onClick={() => setEditing("new")}>
+            <ManagerOnly runner><Button onClick={() => setEditing("new")}>
               <Plus /> Add a product
             </Button></ManagerOnly>
           </div>
@@ -161,8 +166,10 @@ function Products({ wsId }: { wsId: string }) {
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{shortDate(p.updatedAt)}</TableCell>
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[p.id]} restore={p.archived} onChanged={products.reload} />
-                      <ManagerOnly>
+                      {!prospector && (
+                        <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[p.id]} restore={p.archived} onChanged={products.reload} />
+                      )}
+                      {p.isOwner !== false && <ManagerOnly runner>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -173,7 +180,7 @@ function Products({ wsId }: { wsId: string }) {
                         >
                           <Trash2 />
                         </Button>
-                      </ManagerOnly>
+                      </ManagerOnly>}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -244,6 +251,10 @@ function ProductSheet({
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [aiRunning, setAiRunning] = useState(false)
+  // A Prospector: AI suggestions and archiving aren't theirs; a product shared to use only is read, not changed.
+  const { me } = useAuth()
+  const prospector = isProspector(me?.role)
+  const readOnly = product?.canEdit === false
   const fieldsError = productFieldsError(draft.customFields, draft.notes)
   const nameError = touched && !draft.name.trim() ? "Give the product a name" : ""
 
@@ -297,8 +308,11 @@ function ProductSheet({
             void save()
           }}
         >
-          <ProductAISuggestions workspaceId={wsId} draft={draft} disabled={busy || !!fieldsError || !draft.name.trim()} onApply={setDraft} onRunningChange={setAiRunning} />
-          <fieldset disabled={busy || aiRunning} className="space-y-4">
+          {!prospector && (
+            <ProductAISuggestions workspaceId={wsId} draft={draft} disabled={busy || !!fieldsError || !draft.name.trim()} onApply={setDraft} onRunningChange={setAiRunning} />
+          )}
+          {readOnly && <p className="text-sm text-muted-foreground">Shared with you to use. Ask an admin if you need to change it.</p>}
+          <fieldset disabled={busy || aiRunning || readOnly} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="product-name">Name</Label>
             <Input
@@ -359,9 +373,9 @@ function ProductSheet({
           </fieldset>
         </form>
         <SheetFooter className="flex-row flex-wrap justify-between gap-2 border-t border-rule px-5 py-4">
-          {product && <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[product.id]} restore={product.archived}
+          {product && !prospector && <ArchiveRecordsButton workspaceId={wsId} kind="product" ids={[product.id]} restore={product.archived}
             disabled={busy || aiRunning} onChanged={() => { onSaved(); onClose() }} />}
-          {product ? (
+          {product && product.isOwner !== false ? (
             <Button
               variant="ghost"
               className="text-destructive"
@@ -377,7 +391,7 @@ function ProductSheet({
             <Button variant="outline" onClick={onClose} disabled={busy || aiRunning}>
               Cancel
             </Button>
-            <Button type="submit" form="product-form" disabled={busy || aiRunning || !!fieldsError}>
+            <Button type="submit" form="product-form" className={readOnly ? "hidden" : undefined} disabled={busy || aiRunning || !!fieldsError || readOnly}>
               {busy ? "Saving…" : product ? "Save" : "Add product"}
             </Button>
           </div>

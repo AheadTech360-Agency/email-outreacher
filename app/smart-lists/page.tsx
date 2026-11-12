@@ -30,7 +30,7 @@ import { useAuth } from "@/lib/auth"
 import { type CandidateFilters, fetchCandidateIds, fetchCandidates } from "@/lib/lists"
 import { useDebounced } from "@/lib/use-debounced"
 import { formatUsd } from "@/lib/format"
-import { canManage } from "@/lib/roles"
+import { canManage, isProspector } from "@/lib/roles"
 import { cn } from "@/lib/utils"
 
 const SORT_LIMIT = 2000
@@ -52,6 +52,10 @@ export default function SmartListsPage() {
 const errorText = (e: unknown) => (e instanceof Error ? e.message : undefined)
 
 function SmartLists({ wsId }: { wsId: string }) {
+  // A Prospector: their own lists and those shared with them. Sorting and ICP drafts (Claude) and the whole
+  // workspace's CSV aren't theirs.
+  const { me } = useAuth()
+  const prospector = isProspector(me?.role)
   const [kind, setKind] = useState<SmartListKind>("company")
   const [extra, setExtra] = useState<Record<string,string>>({})
   const [openId, setOpenId] = useState<string | null>(null)
@@ -126,7 +130,7 @@ function SmartLists({ wsId }: { wsId: string }) {
           {lists.data ? `${unsorted} ${what} not in a list yet` : "Loading…"}
         </p>
         <div className="ml-auto flex flex-wrap gap-2">
-          {kind === "person" && (
+          {kind === "person" && !prospector && (
             <Button
               variant="outline"
               onClick={() => downloadCsv(wsId, "/smart-lists/people.csv", "people.csv").catch((e) => toast.error(errorText(e)))}
@@ -134,19 +138,21 @@ function SmartLists({ wsId }: { wsId: string }) {
               <Download /> All people (CSV)
             </Button>
           )}
-          <ManagerOnly>
+          <ManagerOnly runner>
             <Button variant="outline" onClick={() => setCreating(true)}>
               <Plus /> New list
             </Button>
           </ManagerOnly>
-          <ManagerOnly>
-            <Button disabled={sorting || !unsorted} onClick={() => void sort()}>
-              <Sparkles /> {sorting ? "Sorting…" : `Sort ${Math.min(unsorted, SORT_LIMIT)} ${what}`}
-            </Button>
-          </ManagerOnly>
+          {!prospector && (
+            <ManagerOnly>
+              <Button disabled={sorting || !unsorted} onClick={() => void sort()}>
+                <Sparkles /> {sorting ? "Sorting…" : `Sort ${Math.min(unsorted, SORT_LIMIT)} ${what}`}
+              </Button>
+            </ManagerOnly>
+          )}
         </div>
       </div>
-            {(waiting.length > 0 || undrafted.length > 0) && (
+            {!prospector && (waiting.length > 0 || undrafted.length > 0) && (
         <div className="space-y-2 rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm">
           {waiting.length > 0 && (
             <div className="space-y-1.5">
@@ -336,7 +342,10 @@ function ListDetail({
   const [newName, setNewName] = useState("")
   const [moving, setMoving] = useState(false)
   const { me } = useAuth()
-  const manager = canManage(me?.role)
+  // A Prospector changes only a list they may edit, deletes only their own, and doesn't download the CSV.
+  const prospector = isProspector(me?.role)
+  const editable = list.data?.canEdit !== false
+  const manager = canManage(me?.role) || (prospector && editable)
 
   // Search once typing stops, from page 1.
   useEffect(() => {
@@ -382,7 +391,8 @@ function ListDetail({
       }
       return next
     })
-  const others = lists.filter((l) => l.id !== id)
+  // Where they can move to: for a Prospector, only the lists they may edit.
+  const others = lists.filter((l) => l.id !== id && l.canEdit !== false)
   const what = (n: number) => (d.kind === "company" ? (n === 1 ? "company" : "companies") : n === 1 ? "person" : "people")
   const first = (page - 1) * d.pageSize + 1
   const last = Math.min(page * d.pageSize, d.matching)
@@ -426,30 +436,37 @@ function ListDetail({
           {d.count.toLocaleString()} {what(d.count)}
         </span>
         <div className="ml-auto flex flex-wrap gap-2">
-          <ManagerOnly>
-            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-              <Plus /> Add {d.kind === "company" ? "companies" : "people"}
-            </Button>
-          </ManagerOnly>
-          {name === null && (
-            <ManagerOnly>
+          {editable && (
+            <ManagerOnly runner>
+              <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+                <Plus /> Add {d.kind === "company" ? "companies" : "people"}
+              </Button>
+            </ManagerOnly>
+          )}
+          {name === null && editable && (
+            <ManagerOnly runner>
               <Button variant="ghost" size="sm" onClick={() => setName(d.name)}>
                 Rename
               </Button>
             </ManagerOnly>
           )}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => downloadCsv(wsId, `/smart-lists/${id}/export.csv`, `${slug}.csv`).catch((e) => toast.error(errorText(e)))}
-          >
-            <Download /> Download CSV
-          </Button>
-          <ManagerOnly>
-            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
-              <Trash2 /> Delete list
+          {!prospector && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadCsv(wsId, `/smart-lists/${id}/export.csv`, `${slug}.csv`).catch((e) => toast.error(errorText(e)))}
+            >
+              <Download /> Download CSV
             </Button>
-          </ManagerOnly>
+          )}
+          {prospector && !editable && <span className="text-xs text-muted-foreground">Shared with you to use</span>}
+          {d.isOwner !== false && (
+            <ManagerOnly runner>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setConfirmDelete(true)}>
+                <Trash2 /> Delete list
+              </Button>
+            </ManagerOnly>
+          )}
         </div>
       </div>
       {adding && (
@@ -485,7 +502,7 @@ function ListDetail({
         }}
       />
 
-      {d.kind === "company" && <IcpDraftPanel wsId={wsId} list={d} onChanged={() => (list.reload(), onChanged())} />}
+      {d.kind === "company" && !prospector && <IcpDraftPanel wsId={wsId} list={d} onChanged={() => (list.reload(), onChanged())} />}
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-72">
@@ -554,8 +571,8 @@ function ListDetail({
               onChange={(e) => setNewName(e.target.value)}
             />
           )}
-          <ManagerOnly>
-            <Button size="sm" disabled={moving || !target || (target === NEW_LIST && !newName.trim())} onClick={() => void move()}>
+          <ManagerOnly runner>
+            <Button size="sm" disabled={!manager || moving || !target || (target === NEW_LIST && !newName.trim())} onClick={() => void move()}>
               {moving ? "Moving…" : "Move"}
             </Button>
           </ManagerOnly>
