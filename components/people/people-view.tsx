@@ -41,6 +41,7 @@ import {
   revealStakeholders,
   useApi,
 } from "@/lib/api"
+import { ColumnPicker, type ColumnDef, useColumns } from "@/components/column-picker"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useAuth } from "@/lib/auth"
 import { canManage, isProspector } from "@/lib/roles"
@@ -77,6 +78,27 @@ function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
 
 /** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
 /** Everyone found for this workspace, by company, ICP or LinkedIn, and turning them into leads with posts. */
+const linkCell = (href: string | null, label?: string) =>
+  href ? (
+    <a href={href} target="_blank" rel="noreferrer" className="text-[13px] hover:underline" onClick={(e) => e.stopPropagation()}>
+      {label ?? href.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+    </a>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  )
+const textOf = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v))
+
+/** Columns the People table can also show ("More columns"). */
+const PERSON_COLUMNS: ColumnDef<PersonRow>[] = [
+  { key: "title", label: "Title", cell: (s) => s.title || "—", text: (s) => s.title },
+  { key: "seniority", label: "Seniority", cell: (s) => s.seniority || "—", text: (s) => textOf(s.seniority) },
+  { key: "email", label: "Email address", cell: (s) => s.email || "—", text: (s) => textOf(s.email) },
+  { key: "emailStatus", label: "Email status", cell: (s) => s.emailStatus || "—", text: (s) => textOf(s.emailStatus) },
+  { key: "linkedin", label: "LinkedIn URL", cell: (s) => linkCell(s.linkedinUrl), text: (s) => textOf(s.linkedinUrl) },
+  { key: "posts", label: "Posts", cell: (s) => s.postCount || "—", text: (s) => String(s.postCount) },
+  { key: "revealed", label: "Email revealed", cell: (s) => (s.revealedAt ? shortDate(s.revealedAt) : "—"), text: (s) => textOf(s.revealedAt) },
+]
+
 export function PeopleView() {
   return (
     <>
@@ -94,6 +116,7 @@ export function PeopleView() {
 function PeopleList({ wsId }: { wsId: string }) {
   const router = useRouter()
   const { me } = useAuth()
+  const extraColumns = useColumns("people-extra", PERSON_COLUMNS, [])
   // A Prospector reads the people at their companies: no exports, adding or actions.
   const prospector = isProspector(me?.role)
   // Adding, importing and revealing people can make leads, and fetching changes post counts, so the
@@ -348,6 +371,7 @@ function PeopleList({ wsId }: { wsId: string }) {
         <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},{key:"postState",label:"Fetched personal posts",options:PRESENCE_OPTIONS},{key:"emailState",label:"Email verification status",options:choices(people.data?.emailStatuses ?? [])},{key:"companyText",label:"Employer",type:"text",placeholder:"Search company name"}]} />
         <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Map()); setPage(1) }} />
         <div className="ml-auto">
+          <ColumnPicker label="More columns" columns={PERSON_COLUMNS} shown={extraColumns.shown} onToggle={extraColumns.toggle} onReset={extraColumns.reset} />
           <ListTools wsId={wsId} scope="people" filters={{ query, foundBy, status, emailFilter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["linkedin","postState","emailState","companyText"])); setQuery(v.query ?? ""); setFoundBy(v.foundBy ?? "all"); setStatus(["all", "hidden", "revealed", "lead", "notlead"].includes(v.status) ? v.status : "all"); setEmailFilter(["all", "none", "has", "verified"].includes(v.emailFilter) ? v.emailFilter : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Map()); setPage(1) }} onRefresh={() => people.reload()} />
         </div>
       </div>
@@ -445,6 +469,9 @@ function PeopleList({ wsId }: { wsId: string }) {
                 <TableHead>Email</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead>Found</TableHead>
+                {extraColumns.visible.map((col) => (
+                  <TableHead key={col.key} className="whitespace-nowrap">{col.label}</TableHead>
+                ))}
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -524,6 +551,9 @@ function PeopleList({ wsId }: { wsId: string }) {
                       )}
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-muted-foreground">{shortDate(s.foundAt)}</TableCell>
+                    {extraColumns.visible.map((col) => (
+                      <TableCell key={col.key} className="max-w-56 truncate whitespace-nowrap text-[13px]">{col.cell(s)}</TableCell>
+                    ))}
                   </TableRow>
                 )
               })}

@@ -42,7 +42,8 @@ import {
   useApi,
   type CompanySource,
 } from "@/lib/api"
-import { formatUsd } from "@/lib/format"
+import { ColumnPicker, type ColumnDef, useColumns } from "@/components/column-picker"
+import { formatUsd, shortDate } from "@/lib/format"
 import { useAuth } from "@/lib/auth"
 import { canManage, isProspector } from "@/lib/roles"
 import { cn } from "@/lib/utils"
@@ -62,6 +63,30 @@ const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [
 const needsResearch = (c: CompanyBrief) => c.source !== "lead_intel" && (c.status === "found" || c.status === "error")
 
 /** The company pipeline, for every ICP or one: find, research and score, then find stakeholders at the qualified ones. */
+const linkCell = (href: string | null, label?: string) =>
+  href ? (
+    <a href={href} target="_blank" rel="noreferrer" className="text-[13px] hover:underline" onClick={(e) => e.stopPropagation()}>
+      {label ?? href.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+    </a>
+  ) : (
+    <span className="text-muted-foreground">—</span>
+  )
+const textOf = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v))
+
+/** Columns the Companies table can also show ("More columns"). */
+const COMPANY_COLUMNS: ColumnDef<CompanyRow>[] = [
+  { key: "website", label: "Website", cell: (c) => linkCell(c.websiteUrl || (c.domain ? `https://${c.domain}` : null)), text: (c) => textOf(c.websiteUrl || c.domain) },
+  { key: "linkedin", label: "LinkedIn", cell: (c) => linkCell(c.linkedinUrl, c.linkedinUrl ? "Page" : undefined), text: (c) => textOf(c.linkedinUrl) },
+  { key: "instagram", label: "Instagram", cell: (c) => linkCell(c.instagramUrl), text: (c) => textOf(c.instagramUrl) },
+  { key: "facebook", label: "Facebook", cell: (c) => linkCell(c.facebookUrl), text: (c) => textOf(c.facebookUrl) },
+  { key: "twitter", label: "X (Twitter)", cell: (c) => linkCell(c.twitterUrl), text: (c) => textOf(c.twitterUrl) },
+  { key: "phone", label: "Phone", cell: (c) => c.phone || "—", text: (c) => textOf(c.phone) },
+  { key: "city", label: "City", cell: (c) => c.city || "—", text: (c) => textOf(c.city) },
+  { key: "state", label: "State", cell: (c) => c.state || "—", text: (c) => textOf(c.state) },
+  { key: "researched", label: "Verified", cell: (c) => (c.researchedAt ? shortDate(c.researchedAt) : "—"), text: (c) => textOf(c.researchedAt) },
+  { key: "found", label: "Found", cell: (c) => shortDate(c.createdAt), text: (c) => c.createdAt },
+]
+
 export function CompaniesView({ initialIcp }: { initialIcp: string }) {
   return (
     <>
@@ -79,6 +104,7 @@ export function CompaniesView({ initialIcp }: { initialIcp: string }) {
 function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const router = useRouter()
   const { me } = useAuth()
+  const extraColumns = useColumns("companies-extra", COMPANY_COLUMNS, [])
   // A Prospector reads the companies their runs found (and those in their lists): no exports or actions.
   const prospector = isProspector(me?.role)
   const icps = useApi(() => fetchIcps(wsId), [wsId])
@@ -281,6 +307,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"source",label:"Company source",options:choices(companies.data?.sources ?? [])},{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
         <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Map()); setPage(1) }} />
         <div className="ml-auto">
+          <ColumnPicker label="More columns" columns={COMPANY_COLUMNS} shown={extraColumns.shown} onToggle={extraColumns.toggle} onReset={extraColumns.reset} />
           <ListTools wsId={wsId} scope="companies" filters={{ query, icpId, filter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["source","location","website","contacts","scoreBand","icpState"])); setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(["all", "review", "qualified", "found", "not_fit", "error"].includes(v.filter) ? v.filter as "all" | PipelineStatus : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Map()); setPage(1) }} onRefresh={() => companies.reload()} />
         </div>
       </div>
@@ -389,6 +416,9 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Score</TableHead>
                 <TableHead className="text-right">People</TableHead>
+                {extraColumns.visible.map((col) => (
+                  <TableHead key={col.key} className="whitespace-nowrap">{col.label}</TableHead>
+                ))}
                 <TableHead className="w-28">
                   <span className="sr-only">Actions</span>
                 </TableHead>
@@ -428,6 +458,9 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                       "—"
                     )}
                   </TableCell>
+                  {extraColumns.visible.map((col) => (
+                    <TableCell key={col.key} className="max-w-56 truncate whitespace-nowrap text-[13px]">{col.cell(c)}</TableCell>
+                  ))}
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     {c.status === "qualified" ? (
                       <Button size="sm" variant="outline" onClick={() => setStakeholdersFor([brief(c)])}>

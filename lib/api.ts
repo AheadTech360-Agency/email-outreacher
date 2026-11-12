@@ -1528,6 +1528,37 @@ export interface CompanyBrief {
 export const fetchQuickstartBriefs = (workspaceId: string, runId: string) =>
   api<CompanyBrief[]>(`/quickstart/runs/${runId}/briefs`, { workspaceId })
 
+/** One person a run found, with their company: a row of the run's people table and its CSV. */
+export interface QuickstartPerson {
+  id: string
+  firstName: string
+  lastName: string
+  title: string
+  seniority: string | null
+  email: string | null
+  emailStatus: string | null
+  linkedinUrl: string | null
+  source: string
+  foundAt: string
+  lead: boolean
+  companyId: string | null
+  company: string
+  companyStatus: string | null
+  companyScore: number | null
+  companyWebsite: string | null
+  companyLinkedin: string | null
+  companyInstagram: string | null
+  companyFacebook: string | null
+  companyPhone: string | null
+  city: string | null
+  state: string | null
+  employees: number | null
+  industry: string | null
+}
+
+export const fetchQuickstartPeople = (workspaceId: string, runId: string) =>
+  api<QuickstartPerson[]>(`/quickstart/runs/${runId}/people`, { workspaceId })
+
 export const fetchQuickstartRuns = (workspaceId: string) => api<QuickstartRun[]>("/quickstart/runs", { workspaceId })
 
 /** What the start form allows you: a Prospector's most per run (null for everyone else). */

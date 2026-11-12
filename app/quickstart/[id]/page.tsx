@@ -9,6 +9,7 @@ import { BackendError, WorkspaceGate } from "@/components/companies/backend-stat
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
+import { RunPeople } from "@/components/quickstart/run-people"
 import { PageHeader } from "@/components/page-header"
 import { RUN_STATUS } from "@/components/quickstart/run-status"
 import { Pill, type PillTone } from "@/components/status"
@@ -126,7 +127,7 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
         <Steps run={r} />
         {r.settings.source === "linkedin" ? <Briefs wsId={wsId} run={r} /> : <Drafts wsId={wsId} run={r} onChanged={run.reload} />}
         <Companies wsId={wsId} run={r} onChanged={run.reload} />
-        <Leads run={r} />
+        <RunPeople wsId={wsId} run={r} />
         <p className="text-sm">
           <Link href="/quickstart" className="underline">
             Back to Quick Start
@@ -167,6 +168,17 @@ function Controls({ wsId, run, live, onChanged }: { wsId: string; run: Quickstar
       </div>
     )
   }
+  // It ended with companies waiting (nobody qualified then); once some are approved, it can go on with them.
+  const approvedSince =
+    run.status === "done" && (run.steps.people?.state ?? "skipped") === "skipped" && run.companies.some((c) => c.status === "qualified")
+  if (approvedSince)
+    return (
+      <ManagerOnly runner>
+        <Button onClick={() => void act(resumeQuickstart(wsId, run.id), "Continuing with the approved companies")}>
+          <Play /> Continue with the approved
+        </Button>
+      </ManagerOnly>
+    )
   if (run.status === "failed")
     return (
       <ManagerOnly runner>
@@ -602,12 +614,12 @@ function Companies({ wsId, run, onChanged }: { wsId: string; run: QuickstartDeta
       {waiting.length > 1 && (
         <div className="flex flex-wrap items-center gap-2 border-t bg-warning/10 px-4 py-2 text-sm">
           <span>{waiting.length} under your approval threshold.</span>
-          <ManagerOnly>
+          <ManagerOnly runner>
             <Button size="sm" variant="outline" disabled={!!busy} onClick={() => void decide(waiting.map((c) => c.id), "qualified")}>
               Approve all {waiting.length}
             </Button>
           </ManagerOnly>
-          <ManagerOnly>
+          <ManagerOnly runner>
             <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => void decide(waiting.map((c) => c.id), "not_fit")}>
               Reject all
             </Button>
@@ -627,12 +639,12 @@ function Companies({ wsId, run, onChanged }: { wsId: string; run: QuickstartDeta
               <Pill tone={s.tone}>{s.label}</Pill>
               {c.status === "review" && (
                 <span className="flex gap-1">
-                  <ManagerOnly>
+                  <ManagerOnly runner>
                     <Button size="sm" variant="outline" className="h-7" disabled={!!busy} onClick={() => void decide([c.id], "qualified")}>
                       Approve
                     </Button>
                   </ManagerOnly>
-                  <ManagerOnly>
+                  <ManagerOnly runner>
                     <Button size="sm" variant="ghost" className="h-7" disabled={!!busy} onClick={() => void decide([c.id], "not_fit")}>
                       Reject
                     </Button>
@@ -647,36 +659,3 @@ function Companies({ wsId, run, onChanged }: { wsId: string; run: QuickstartDeta
   )
 }
 
-function Leads({ run }: { run: QuickstartDetail }) {
-  if (!run.leads.length) return null
-  return (
-    <details className="group rounded-lg border">
-      <summary className="cursor-pointer px-4 py-3 text-base font-semibold">
-        Leads ({run.leads.length})
-        <span className="ml-2 text-sm font-normal text-muted-foreground">
-          {run.leads.filter((l) => l.emailStatus === "valid").length} valid, {run.leads.filter((l) => l.emailStatus === "website").length} from websites,{" "}
-          {run.leads.filter((l) => l.emailStatus === "risky").length} risky
-        </span>
-      </summary>
-      <div className="divide-y divide-rule border-t">
-        {run.leads.map((l) => {
-          const email = emailPill(l.emailStatus)
-          return (
-            <div key={l.id} className="flex flex-wrap items-center gap-3 px-4 py-2 text-sm">
-              <span className="min-w-0 flex-1">
-                <span className="block font-medium">
-                  {l.name} <span className="font-normal text-muted-foreground">{l.title && `· ${l.title}`}</span>
-                </span>
-                <span className="block truncate text-xs text-muted-foreground">
-                  {l.company} · {l.email ?? "no email"}
-                </span>
-              </span>
-              <span className="text-xs tabular-nums text-muted-foreground">{l.posts} posts</span>
-              <Pill tone={email.tone}>{email.label}</Pill>
-            </div>
-          )
-        })}
-      </div>
-    </details>
-  )
-}
