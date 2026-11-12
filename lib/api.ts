@@ -712,7 +712,7 @@ export const fetchLeadPosts = (
 
 export type PipelineStatus = "found" | "review" | "qualified" | "not_fit" | "error"
 
-export type CompanySource = "lead_intel" | "apollo" | "google_maps"
+export type CompanySource = "lead_intel" | "apollo" | "google_maps" | "linkedin"
 
 export interface PipelineCompany {
   archived: boolean
@@ -1378,11 +1378,12 @@ export const importLeadsCsv = (workspaceId: string, icpId: string, csv: string, 
 
 // ---------- Quick Start: an ICP from a Google Maps search to drafts in review, in the background ----------
 
-export type QuickstartStepKey = "find" | "research" | "website" | "people" | "leads" | "profiles" | "posts" | "write"
+export type QuickstartStepKey = "find" | "google" | "research" | "website" | "people" | "leads" | "profiles" | "posts" | "write" | "analysis"
 
 export interface QuickstartSettings {
-  /** google_maps: search for new companies. existing: companies already here (imported) no one has written to. */
-  source?: "google_maps" | "existing"
+  /** google_maps: search for new companies. existing: companies already here (imported) no one has written to.
+   * linkedin: find them on LinkedIn, search the web, verify, find people, read posts, and end with a brief on each. */
+  source?: "google_maps" | "existing" | "linkedin"
   /** existing: only the companies in this smart list. */
   smartListId?: string | null
   /** existing: look on LinkedIn at companies where no one with an email is known yet. */
@@ -1462,7 +1463,42 @@ export const startQuickstart = (workspaceId: string, body: QuickstartSettings & 
 
 /** What a run worked on, in a few words: its search, or the companies it was given. */
 export const runWhere = (s: QuickstartSettings) =>
-  s.source === "existing" ? "Companies you already have" : `${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
+  s.source === "existing"
+    ? "Companies you already have"
+    : s.source === "linkedin"
+      ? `LinkedIn: ${s.searchTerms.join(", ")}${s.places.length ? ` in ${s.places.join("; ")}` : ""}`
+      : `${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
+
+/** A company a LinkedIn run analysed: its data, links, latest posts and brief. */
+export interface CompanyBrief {
+  id: string
+  name: string
+  domain: string | null
+  websiteUrl: string | null
+  linkedinUrl: string | null
+  instagramUrl: string | null
+  facebookUrl: string | null
+  city: string | null
+  state: string | null
+  score: number | null
+  status: string
+  employees: number | null
+  industry: string | null
+  brief: {
+    summary: string
+    fit: string
+    signals: string[]
+    online: string
+    posting_themes: string[]
+    hooks: { hook: string; why: string; evidence: string }[]
+    best_contacts: string[]
+    cautions: string[]
+  }
+  posts: { source: string; url: string; postedAt: string | null; text: string; whose: string }[]
+}
+
+export const fetchQuickstartBriefs = (workspaceId: string, runId: string) =>
+  api<CompanyBrief[]>(`/quickstart/runs/${runId}/briefs`, { workspaceId })
 
 export const fetchQuickstartRuns = (workspaceId: string) => api<QuickstartRun[]>("/quickstart/runs", { workspaceId })
 

@@ -36,6 +36,8 @@ const PRICE = {
   linkedinPersonWithEmail: 0.012,
   post: 0.002,
   write: 0.003, // hook, email and score
+  linkedinSearch: 0.004, // a company from LinkedIn's company search, with its details
+  brief: 0.002, // a company's brief (Claude Haiku)
 }
 
 const hasOffer = (icp: ICP) => !!icp.productId || !!icp.offer.trim()
@@ -74,7 +76,7 @@ function QuickstartHome({ wsId }: { wsId: string }) {
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {r.steps.write?.done ?? 0} drafts · {formatUsd(r.spentUsd)} of {formatUsd(r.spendLimitUsd)}
+                  {r.settings.source === "linkedin" ? `${r.steps.analysis?.done ?? 0} briefs` : `${r.steps.write?.done ?? 0} drafts`} · {formatUsd(r.spentUsd)} of {formatUsd(r.spendLimitUsd)}
                 </span>
                 <Pill tone={RUN_STATUS[r.status].tone}>{RUN_STATUS[r.status].label}</Pill>
               </Link>
@@ -90,8 +92,9 @@ function NewRun({ wsId }: { wsId: string }) {
   const { icps } = useStore()
   const router = useRouter()
   const ready = icps.filter((i) => i.enabled && hasOffer(i))
-  const [source, setSource] = useState<"google_maps" | "existing">("google_maps")
+  const [source, setSource] = useState<"google_maps" | "existing" | "linkedin">("google_maps")
   const existing = source === "existing"
+  const linkedin = source === "linkedin"
   const lists = useApi(() => fetchSmartLists(wsId, "company"), [wsId])
   const [listId, setListId] = useState("all")
   const [findPeople, setFindPeople] = useState(true)
@@ -119,7 +122,15 @@ function NewRun({ wsId }: { wsId: string }) {
   const people = num("companies") * num("people")
   const leads = Math.min(num("leads"), people)
   const peopleCost = num("companies") * PRICE.linkedinCompany + people * (findEmails ? PRICE.linkedinPersonWithEmail : PRICE.linkedinPerson)
-  const lines = existing
+  const lines = linkedin
+    ? [
+        { step: `Find ${num("companies")} companies on LinkedIn`, cost: num("companies") * PRICE.linkedinSearch },
+        { step: "Search the web for their websites and socials (free)", cost: 0 },
+        { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
+        { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
+        { step: "Where LinkedIn finds no one: their profiles from a web search (at most)", cost: people * PRICE.profile },
+      ]
+    : existing
     ? [
         { step: `Take ${num("companies")} of your companies (already verified)`, cost: 0 },
         { step: "Read the websites not read yet (no AI)", cost: 0 },
@@ -136,10 +147,10 @@ function NewRun({ wsId }: { wsId: string }) {
         { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
         { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
       ]
-  lines.push(
-    { step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post },
-    { step: `Write ${leads} emails`, cost: leads * PRICE.write },
-  )
+  lines.push({ step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post })
+  // The LinkedIn option ends with a brief per company; the others write the emails.
+  lines.push(linkedin ? { step: `Analyse ${num("companies")} companies: hooks to use`, cost: num("companies") * PRICE.brief }
+    : { step: `Write ${leads} emails`, cost: leads * PRICE.write })
   // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
   const requestsNeeded = places.length + terms.length * places.length * 3
   const estimate = lines.reduce((sum, l) => sum + l.cost, 0)
@@ -148,10 +159,10 @@ function NewRun({ wsId }: { wsId: string }) {
   const errors = [
     !icp && "Pick an ICP",
     !existing && !terms.length && "Add a search term",
-    !existing && !places.length && "Add a place",
-    !existing && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
-    !existing && !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
-    !(num("companies") >= 1 && num("companies") <= (existing ? 2000 : 100)) && `Companies: 1 to ${existing ? "2,000" : 100}`,
+    source === "google_maps" && !places.length && "Add a place",
+    source === "google_maps" && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
+    source === "google_maps" && !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
+    !(num("companies") >= 1 && num("companies") <= (existing ? 2000 : linkedin ? 200 : 100)) && `Companies: 1 to ${existing ? "2,000" : linkedin ? 200 : 100}`,
     !(num("people") >= 1 && num("people") <= 10) && "People per company: 1 to 10",
     !(num("leads") >= 1 && num("leads") <= 2000) && "Most leads: 1 to 2,000",
     !(num("posts") >= 0 && num("posts") <= 20) && "Posts per lead: 0 to 20",
@@ -188,10 +199,11 @@ function NewRun({ wsId }: { wsId: string }) {
     <section className="space-y-6 rounded-lg border p-5">
       <h2 className="text-base font-semibold">New run</h2>
 
-      <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Which companies">
+      <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="Which companies">
         {([
           ["google_maps", "Find new companies", "Search Google Maps, verify what it finds, then find the people there."],
           ["existing", "Use companies I already have", "The ones you imported: already verified, and their people came with them."],
+          ["linkedin", "Find on LinkedIn", "Search LinkedIn, find their websites and socials, verify, find the people, then get a brief on each with the hooks to use."],
         ] as const).map(([key, title, hint]) => (
           <button
             key={key}
@@ -254,15 +266,20 @@ function NewRun({ wsId }: { wsId: string }) {
       ) : (
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="qs-terms">2. What to search Google Maps for</Label>
+          <Label htmlFor="qs-terms">2. What to search {linkedin ? "LinkedIn" : "Google Maps"} for</Label>
           <TagInput id="qs-terms" value={terms} onChange={setTerms} placeholder="screen printing" />
-          <p className="text-xs text-muted-foreground">What you&apos;d type into Google Maps. Press Enter after each.</p>
+          <p className="text-xs text-muted-foreground">
+            {linkedin ? "Searched on LinkedIn one after another until the limit." : "What you'd type into Google Maps."} Press Enter after each.
+          </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="qs-places">Where</Label>
+          <Label htmlFor="qs-places">Where{linkedin ? " (optional)" : ""}</Label>
           <TagInput places id="qs-places" value={places} onChange={setPlaces} placeholder="Austin, TX" />
           <p className="text-xs text-muted-foreground">
-            US cities or postcodes, like Austin, TX, or a whole state or the United States (searched in full). Press Enter after each.
+            {linkedin
+              ? "Cities, states or countries as LinkedIn names them, like Austin or United States. Empty searches everywhere."
+              : "US cities or postcodes, like Austin, TX, or a whole state or the United States (searched in full)."}{" "}
+            Press Enter after each.
           </p>
         </div>
       </div>
@@ -271,8 +288,8 @@ function NewRun({ wsId }: { wsId: string }) {
       <div>
         <p className="mb-3 text-sm font-medium">3. How much of each step</p>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {!existing && number("radius", "Radius (miles)", "1 to 50, around each city. A state or country is searched in full.")}
-          {!existing &&
+          {source === "google_maps" && number("radius", "Radius (miles)", "1 to 50, around each city. A state or country is searched in full.")}
+          {source === "google_maps" &&
             number(
               "requests",
               "Google requests",
@@ -283,10 +300,12 @@ function NewRun({ wsId }: { wsId: string }) {
             )}
           {existing
             ? number("companies", "Companies", "Up to 2,000 a run. The rest wait for the next one.")
-            : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
+            : linkedin
+              ? number("companies", "Companies to find", "Up to 200 a run, new ones only.")
+              : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
           {number("people", "People per company", existing ? "Those with an email first." : "Found on LinkedIn.")}
-          {number("leads", "Most emails", "People who get an email.")}
-          {number("posts", "Posts per person", "0 writes without posts.")}
+          {number("leads", linkedin ? "Most people" : "Most emails", linkedin ? "People whose posts are read." : "People who get an email.")}
+          {number("posts", "Posts per person", linkedin ? "0 skips reading posts." : "0 writes without posts.")}
         </div>
       </div>
 
@@ -350,7 +369,9 @@ function NewRun({ wsId }: { wsId: string }) {
         </div>
         {errors.length > 0 && icp && <p className="text-xs text-destructive">{errors.join(" · ")}</p>}
         <p className="text-xs text-muted-foreground">
-          Nothing is queued or sent: the run ends with drafts for you to approve, and queueing is still your call.
+          {linkedin
+            ? "Nothing is written or sent: the run ends with a brief on each company and the hooks to use."
+            : "Nothing is queued or sent: the run ends with drafts for you to approve, and queueing is still your call."}
         </p>
       </div>
     </section>

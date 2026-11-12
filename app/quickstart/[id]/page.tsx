@@ -15,8 +15,10 @@ import { Pill, type PillTone } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
 import { Button } from "@/components/ui/button"
 import {
+  type CompanyBrief,
   type QuickstartDetail,
   type QuickstartStepKey,
+  fetchQuickstartBriefs,
   fetchQuickstartRun,
   queueEmails,
   decideCompanies,
@@ -31,7 +33,8 @@ import { formatUsd, shortDate } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
-  { key: "find", label: "Find companies", what: "A Google Maps search, or the companies you already have" },
+  { key: "find", label: "Find companies", what: "A Google Maps or LinkedIn search, or the companies you already have" },
+  { key: "google", label: "Search the web", what: "Each company's website, Instagram and Facebook, where LinkedIn didn't give them: free" },
   { key: "research", label: "Verify companies", what: "Reads each website and Instagram, checks the ICP's rule, scores the fit" },
   { key: "website", label: "Read websites", what: "The websites not read yet: free, no AI" },
   { key: "people", label: "Fetch LinkedIn profiles", what: "Where no one has a verified email yet: LinkedIn profiles at the qualified companies, with work emails" },
@@ -39,6 +42,7 @@ const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
   { key: "profiles", label: "Fill in profiles", what: "Their LinkedIn profiles and their company's LinkedIn page and Instagram, where not read yet" },
   { key: "posts", label: "Read their posts", what: "Their recent LinkedIn and Instagram posts, for the opening line" },
   { key: "write", label: "Write emails", what: "One email each, from your templates; they wait for your review" },
+  { key: "analysis", label: "Analyse companies", what: "A brief on each qualified company: what they do, what they post, the hooks to use" },
 ]
 const COMPANY: Record<string, { label: string; tone: PillTone }> = {
   found: { label: "To verify", tone: "neutral" },
@@ -120,7 +124,7 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
       <div className="space-y-8 px-4 pb-10 md:px-8">
         <Summary run={r} />
         <Steps run={r} />
-        <Drafts wsId={wsId} run={r} onChanged={run.reload} />
+        {r.settings.source === "linkedin" ? <Briefs wsId={wsId} run={r} /> : <Drafts wsId={wsId} run={r} onChanged={run.reload} />}
         <Companies wsId={wsId} run={r} onChanged={run.reload} />
         <Leads run={r} />
         <p className="text-sm">
@@ -220,12 +224,14 @@ function Summary({ run }: { run: QuickstartDetail }) {
       unit: "leads",
       rest: `${l.filter((x) => x.emailStatus === "valid").length} valid · ${l.filter((x) => x.emailStatus === "website").length} from websites · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
     },
-    {
-      label: "Emails",
-      value: d.filter((x) => x.status === "draft" || x.status === "edited").length,
-      unit: "to review",
-      rest: `${d.filter((x) => x.status === "approved").length} approved · ${d.filter((x) => x.status === "queued" || x.status === "sent").length} queued`,
-    },
+    run.settings.source === "linkedin"
+      ? { label: "Briefs", value: run.steps.analysis?.done ?? 0, unit: "companies", rest: "With the hooks to use" }
+      : {
+          label: "Emails",
+          value: d.filter((x) => x.status === "draft" || x.status === "edited").length,
+          unit: "to review",
+          rest: `${d.filter((x) => x.status === "approved").length} approved · ${d.filter((x) => x.status === "queued" || x.status === "sent").length} queued`,
+        },
     {
       label: "Spent",
       value: formatUsd(run.spentUsd),
@@ -453,6 +459,118 @@ function Drafts({ wsId, run, onChanged }: { wsId: string; run: QuickstartDetail;
         )}
       </ConfirmDialog>
     </section>
+  )
+}
+
+/** The LinkedIn option's end result: a brief per qualified company, best score first. */
+function Briefs({ wsId, run }: { wsId: string; run: QuickstartDetail }) {
+  const done = run.steps.analysis?.done ?? 0
+  const briefs = useApi(() => fetchQuickstartBriefs(wsId, run.id), [wsId, run.id, done])
+  if (!done && !briefs.data?.length) return null
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-base font-semibold">Company analysis</h2>
+        <p className="text-sm text-muted-foreground">What each qualified company is about, what they post, and the hooks most likely to work.</p>
+      </div>
+      {briefs.error && !briefs.data ? (
+        <BackendError message={briefs.error} onRetry={briefs.reload} />
+      ) : !briefs.data ? (
+        <TableSkeleton rows={3} />
+      ) : (
+        <div className="space-y-3">
+          {briefs.data.map((c, i) => (
+            <BriefCard key={c.id} company={c} open={i < 3} />
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean }) {
+  const b = c.brief
+  const links = [
+    ["Website", c.websiteUrl ?? (c.domain ? `https://${c.domain}` : null)],
+    ["LinkedIn", c.linkedinUrl],
+    ["Instagram", c.instagramUrl],
+    ["Facebook", c.facebookUrl],
+  ].filter((l): l is [string, string] => !!l[1])
+  const facts = [[c.city, c.state].filter(Boolean).join(", "), c.industry, c.employees ? `${c.employees.toLocaleString()} employees` : null].filter(Boolean)
+  return (
+    <details open={open} className="group rounded-lg border">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3">
+        <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" aria-hidden />
+        <span className="font-medium">{c.name}</span>
+        {c.score !== null && <Pill tone="positive">Score {c.score}</Pill>}
+        <span className="text-xs text-muted-foreground">{facts.join(" · ")}</span>
+      </summary>
+      <div className="grid gap-5 border-t px-4 py-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+        <div className="space-y-4 text-sm">
+          <p>{b.summary}</p>
+          <p className="text-muted-foreground">{b.fit}</p>
+          {b.hooks.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Hooks to use</h3>
+              <ol className="space-y-2">
+                {b.hooks.map((h, i) => (
+                  <li key={i} className="rounded-md bg-muted/40 px-3 py-2">
+                    <p className="font-medium">{i + 1}. {h.hook}</p>
+                    <p className="mt-0.5 text-muted-foreground">{h.why}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">Based on: {h.evidence}</p>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+          {b.signals.length > 0 && <BriefList title="Signals" items={b.signals} />}
+          {b.cautions.length > 0 && <BriefList title="Be careful about" items={b.cautions} />}
+        </div>
+        <div className="space-y-4 text-sm">
+          {links.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {links.map(([label, href]) => (
+                <a key={label} href={href} target="_blank" rel="noreferrer" className="rounded-md border px-2 py-1 text-xs hover:bg-muted">
+                  {label}
+                </a>
+              ))}
+            </div>
+          )}
+          <p className="text-muted-foreground">{b.online}</p>
+          {b.posting_themes.length > 0 && <BriefList title="What they post about" items={b.posting_themes} />}
+          {c.posts.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Latest posts</h3>
+              <ul className="space-y-2">
+                {c.posts.map((p) => (
+                  <li key={p.url} className="text-xs">
+                    <a href={p.url} target="_blank" rel="noreferrer" className="font-medium hover:underline">
+                      {p.source === "instagram" ? "Instagram" : "LinkedIn"}, {p.whose === "person" ? "a person there" : "the company"}
+                      {p.postedAt ? `, ${shortDate(p.postedAt)}` : ""}
+                    </a>
+                    <p className="mt-0.5 line-clamp-3 text-muted-foreground">{p.text}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {b.best_contacts.length > 0 && <BriefList title="Who to email first" items={b.best_contacts} />}
+        </div>
+      </div>
+    </details>
+  )
+}
+
+function BriefList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="space-y-1">
+      <h3 className="text-sm font-semibold">{title}</h3>
+      <ul className="list-disc space-y-0.5 pl-5 text-muted-foreground">
+        {items.map((x, i) => (
+          <li key={i}>{x}</li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

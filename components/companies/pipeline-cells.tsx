@@ -14,7 +14,7 @@ export function StatusPill({ status }: { status: PipelineStatus }) {
   return <Pill tone={s.tone}>{s.label}</Pill>
 }
 
-export const SOURCE_NAME: Record<CompanySource, string> = { lead_intel: "Lead Intel", apollo: "Apollo", google_maps: "Google Maps" }
+export const SOURCE_NAME: Record<CompanySource, string> = { lead_intel: "Lead Intel", apollo: "Apollo", google_maps: "Google Maps", linkedin: "LinkedIn" }
 
 export function SourcePill({ source }: { source: CompanySource }) {
   return <Pill tone={source === "lead_intel" ? "info" : "neutral"}>{SOURCE_NAME[source]}</Pill>
