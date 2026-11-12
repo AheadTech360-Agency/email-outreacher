@@ -13,12 +13,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
 import type { IcpCreate } from "@/lib/api"
+import { useAuth } from "@/lib/auth"
+import { isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
 
 /** Add an ICP. It goes into Lead Intel's ICPs (shared by both projects); who to reach stays in this workspace. */
 export default function NewIcpPage() {
   const router = useRouter()
   const { icps, createIcp } = useStore()
+  const { me } = useAuth()
   const [icp, setIcp] = useState<IcpCreate>(EMPTY_ICP)
   const [titles, setTitles] = useState<string[]>(["Owner", "Founder"])
   const [description, setDescription] = useState("")
@@ -42,7 +45,12 @@ export default function NewIcpPage() {
     try {
       const { icp: created, warning, campaignNote } = await createIcp(icp, { titles, description })
       if (warning) toast.warning(warning)
-      else toast.success(`Added ${created.name}`, { description: "Find companies for it on the Companies page, with Google Maps or Apollo." })
+      else
+        toast.success(`Added ${created.name}`, {
+          description: isProspector(me?.role)
+            ? "Give it an offer below, then find companies for it on Quick Start."
+            : "Find companies for it on the Companies page, with Google Maps or Apollo.",
+        })
       if (campaignNote) (campaignNote.startsWith("Campaign not set up") ? toast.warning : toast.info)(campaignNote)
       router.push(`/icps/${created.id}`)
     } catch (e) {

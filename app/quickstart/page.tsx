@@ -44,6 +44,11 @@ const PRICE = {
 }
 
 const hasOffer = (icp: ICP) => !!icp.productId || !!icp.offer.trim()
+/** Whether research can verify anyone for it: Lead Intel's rule needs words to look for, or a condition (followers,
+ * reviews, places, a website). Without either, every company it finds waits for someone to approve it by hand. */
+const hasRule = (icp: ICP) =>
+  icp.anyOf.length > 0 || icp.websiteAnyOf.length > 0 || icp.instagramAnyOf.length > 0 || icp.minFollowers !== null ||
+  icp.maxFollowers !== null || icp.minReviews !== null || icp.requiresWebsite || icp.places.length > 0
 
 export default function QuickstartPage() {
   return (
@@ -183,6 +188,8 @@ function NewRun({ wsId }: { wsId: string }) {
     !(limit > 0 && limit <= 500) && "Spend limit: above $0, up to $500",
     cap !== null && limit > cap && `Spend limit: your runs can spend at most ${formatUsd(cap)}`,
     prospector && limits.data === undefined && !limits.error && "Loading your spend limit",
+    // A Prospector can't approve companies by hand, so an ICP that verifies no one would end their run empty.
+    prospector && icp && !hasRule(icp) && "Add words to recognise them to this ICP first (its Definition, \"Any of these words\")",
   ].filter(Boolean) as string[]
 
   const start = async () => {
@@ -407,6 +414,11 @@ function NewRun({ wsId }: { wsId: string }) {
           </ManagerOnly>
         </div>
         {errors.length > 0 && icp && <p className="text-xs text-destructive">{errors.join(" · ")}</p>}
+        {!prospector && icp && !hasRule(icp) && (
+          <p className="text-xs text-muted-foreground">
+            {icp.name} has no words to recognise them by, so every company found waits for you to approve it by hand.
+          </p>
+        )}
         <p className="text-xs text-muted-foreground">
           {linkedin
             ? "Nothing is written or sent: the run ends with a brief on each company and the hooks to use."
