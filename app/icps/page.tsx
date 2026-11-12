@@ -25,7 +25,11 @@ const LOW_CONFIDENCE = 60
 export default function IcpsPage() {
   const { icps, icpsStatus, icpsError, reloadIcps, workspacesStatus, leads, settings, currentWorkspaceId } = useStore()
   const loading = icpsStatus === "loading" || workspacesStatus === "loading"
-  const emails = useApi(() => (currentWorkspaceId ? fetchEmails(currentWorkspaceId) : Promise.resolve([])), [currentWorkspaceId])
+  // Only drafts waiting for review: sent and skipped emails never show here.
+  const emails = useApi(
+    () => (currentWorkspaceId ? fetchEmails(currentWorkspaceId, { statuses: ["draft", "edited"] }) : Promise.resolve([])),
+    [currentWorkspaceId],
+  )
 
   const [archiveFilter, setArchiveFilter] = useState("active")
   const [extra, setExtra] = useState<Record<string,string>>({})

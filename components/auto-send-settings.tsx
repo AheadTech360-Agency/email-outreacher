@@ -24,7 +24,10 @@ export function AutoSendSettings() {
 
 function AutoSendForm() {
   const { settings, saveSettings, templates, currentWorkspaceId } = useStore()
-  const emails = useApi(() => (currentWorkspaceId ? fetchEmails(currentWorkspaceId) : Promise.resolve([])), [currentWorkspaceId])
+  const emails = useApi(
+    () => (currentWorkspaceId ? fetchEmails(currentWorkspaceId, { statuses: ["draft", "edited"] }) : Promise.resolve([])),
+    [currentWorkspaceId],
+  )
   const [draft, setDraft] = useState<ScoringSettings>(settings.scoring)
   const [confirmOn, setConfirmOn] = useState(false)
   const set = <K extends keyof ScoringSettings>(key: K, value: ScoringSettings[K]) => setDraft((d) => ({ ...d, [key]: value }))

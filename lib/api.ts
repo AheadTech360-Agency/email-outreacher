@@ -736,9 +736,11 @@ export interface PipelineCompany {
   statusReason: string | null
   overridden: boolean
   ruleFit: boolean | null
-  ruleDetail: { reason: string; hits: { term: string; source: string; group: string }[]; skipped: string[] } | null
+  // The rule and score breakdowns and the research come only with one company (its page, or a change to it): the
+  // companies list leaves them out, as they're most of each row.
+  ruleDetail?: { reason: string; hits: { term: string; source: string; group: string }[]; skipped: string[] } | null
   score: number | null
-  scoreDetail: {
+  scoreDetail?: {
     summary: string
     reasons: string[]
     concerns: string[]
@@ -747,7 +749,7 @@ export interface PipelineCompany {
     /** Pages Claude asked to read after the homepage, in order, and why. */
     reading?: { url: string; reason: string; read: boolean }[]
   } | null
-  research: {
+  research?: {
     website: { outcome: string; via: string | null; url: string | null; title: string; text: string; detail: string | null } | null
     socials: Record<string, string>
     instagram: { handle: string; name: string; bio: string; category: string | null; followers: number | null; private: boolean } | null
@@ -1054,7 +1056,38 @@ export interface GenerateResult {
   costUsd: number
 }
 
-export const fetchEmails = (workspaceId: string) => api<EmailDraft[]>("/emails", { workspaceId })
+/** Which first emails to read. Every email read is database egress, so ask for only what the page shows. */
+export interface EmailQuery {
+  statuses?: EmailStatus[]
+  leadId?: string
+  /** An ICP id, or "none" for leads with no ICP. */
+  icpId?: string
+}
+
+const emailParams = (q: EmailQuery = {}) => {
+  const p = new URLSearchParams()
+  if (q.statuses?.length) p.set("statuses", q.statuses.join(","))
+  if (q.leadId) p.set("leadId", q.leadId)
+  if (q.icpId) p.set("icpId", q.icpId)
+  return p
+}
+
+export const fetchEmails = (workspaceId: string, q: EmailQuery = {}) => {
+  const p = emailParams(q).toString()
+  return api<EmailDraft[]>(p ? `/emails?${p}` : "/emails", { workspaceId })
+}
+
+/** One page of first emails, newest first, with how many match in all. */
+export const fetchEmailPage = (workspaceId: string, q: EmailQuery, limit: number, offset: number) => {
+  const p = emailParams(q)
+  p.set("limit", String(limit))
+  p.set("offset", String(offset))
+  return api<{ items: EmailDraft[]; total: number; limit: number; offset: number }>(`/emails/page?${p}`, { workspaceId })
+}
+
+/** How many first emails are in each status, without reading them. */
+export const fetchEmailCounts = (workspaceId: string, icpId?: string) =>
+  api<Partial<Record<EmailStatus, number>>>(icpId ? `/emails/counts?icpId=${icpId}` : "/emails/counts", { workspaceId })
 
 export const generateEmails = (workspaceId: string, leadIds: string[], instruction = "") =>
   runJob<GenerateResult>("/emails/generate", { workspaceId, body: { leadIds, instruction } })

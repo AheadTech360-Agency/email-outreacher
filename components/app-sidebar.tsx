@@ -33,7 +33,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { fetchEmails, fetchUsage, useApi } from "@/lib/api"
+import { fetchEmailCounts, fetchUsage, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { canManage } from "@/lib/roles"
 import { formatUsd } from "@/lib/format"
@@ -61,12 +61,12 @@ export function AppSidebar() {
   // The signed-in person's own role (the users list only loads for admins).
   const { me } = useAuth()
   const isAdmin = me?.role === "admin" || users.find((u) => u.id === currentUserId)?.role === "admin"
-  // Drafts waiting for a person, from the backend.
+  // Drafts waiting for a person: a count per status from the backend, not the emails themselves.
   const drafts = useApi(
-    () => (currentWorkspaceId ? fetchEmails(currentWorkspaceId) : Promise.resolve([])),
+    () => (currentWorkspaceId ? fetchEmailCounts(currentWorkspaceId) : Promise.resolve(null)),
     [currentWorkspaceId, pathname],
   )
-  const toReview = (drafts.data ?? []).filter((d) => d.status === "draft" || d.status === "edited").length
+  const toReview = (drafts.data?.draft ?? 0) + (drafts.data?.edited ?? 0)
   // Real spend from the call ledger: Claude (estimated), Apollo and Apify dollars over the last 30 days.
   const usage = useApi(
     () => (currentWorkspaceId ? fetchUsage(currentWorkspaceId, 30) : Promise.resolve(null)),

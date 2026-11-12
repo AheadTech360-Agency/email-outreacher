@@ -53,7 +53,7 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
   const company = useApi(() => (companyId ? fetchPipelineCompany(wsId, companyId) : Promise.resolve(null)), [wsId, companyId])
   const content = useApi(() => (companyId ? fetchCompanyContent(wsId, companyId) : Promise.resolve(null)), [wsId, companyId])
   const own = useApi(() => (leadId ? fetchPosts(wsId, leadId) : Promise.resolve([])), [wsId, leadId])
-  const emails = useApi(() => (leadId ? fetchEmails(wsId) : Promise.resolve([])), [wsId, leadId])
+  const emails = useApi(() => (leadId ? fetchEmails(wsId, { leadId }) : Promise.resolve([])), [wsId, leadId])
 
   if (person.error && !p)
     return (

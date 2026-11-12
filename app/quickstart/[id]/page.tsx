@@ -74,11 +74,21 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
   const run = useApi(() => fetchQuickstartRun(wsId, runId), [wsId, runId])
   const live = run.data?.status === "queued" || run.data?.status === "running"
   const { reload } = run
-  // While it works, the page follows it every few seconds.
+  // While it works, the page follows it every few seconds, but only while it's on screen: a tab left open in the
+  // background would otherwise read the whole run from the database every few seconds for nothing.
   useEffect(() => {
     if (!live) return
-    const timer = setInterval(reload, 3000)
-    return () => clearInterval(timer)
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") reload()
+    }, 5000)
+    const back = () => {
+      if (document.visibilityState === "visible") reload()
+    }
+    document.addEventListener("visibilitychange", back)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener("visibilitychange", back)
+    }
   }, [live, reload])
 
   if (run.error && !run.data && /not found/i.test(run.error))

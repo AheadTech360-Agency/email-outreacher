@@ -25,19 +25,28 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { type EmailDraft, type EmailStatus, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
+import { type EmailDraft, type EmailStatus, fetchEmailCounts, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
 import { confirmKind, confirmNote, needsConfirm } from "@/lib/email-status"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-const FILTERS: { value: string; label: string; test: (s: EmailStatus) => boolean }[] = [
-  { value: "review", label: "To review", test: (s) => s === "draft" || s === "edited" },
-  { value: "approved", label: "Approved", test: (s) => s === "approved" },
-  { value: "sequence", label: "In sequence", test: (s) => s === "queued" || s === "sent" },
-  { value: "skipped", label: "Skipped", test: (s) => s === "skipped" },
+// Each tab reads only its own statuses from the backend (sent emails pile up, and every email read costs database
+// egress); `statuses` undefined is every status.
+const FILTERS: { value: string; label: string; statuses?: EmailStatus[]; test: (s: EmailStatus) => boolean }[] = [
+  { value: "review", label: "To review", statuses: ["draft", "edited"], test: (s) => s === "draft" || s === "edited" },
+  { value: "approved", label: "Approved", statuses: ["approved"], test: (s) => s === "approved" },
+  { value: "sequence", label: "In sequence", statuses: ["queued", "sent"], test: (s) => s === "queued" || s === "sent" },
+  { value: "skipped", label: "Skipped", statuses: ["skipped"], test: (s) => s === "skipped" },
   { value: "all", label: "All", test: () => true },
 ]
+
+/** What a tab reads: its statuses, and always the approved emails (few), for Queue all and so an email just
+ * approved stays open. */
+const toRead = (filter: string): EmailStatus[] | undefined => {
+  const statuses = FILTERS.find((f) => f.value === filter)?.statuses
+  return statuses ? [...new Set<EmailStatus>([...statuses, "approved"])] : undefined
+}
 
 const STATUS: Record<EmailStatus, { label: string; tone: PillTone }> = {
   draft: { label: "Draft", tone: "info" },
@@ -100,9 +109,11 @@ function DraftsWorkspace({ icpId }: { icpId?: string }) {
 function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
   wsId: string; icpId?: string; initialEmailId: string | null; onClearEmailLink: () => void
 }) {
-  const emails = useApi(() => fetchEmails(wsId), [wsId])
+  // An email opened from a link may be in any tab: start on All then.
+  const [filter, setFilter] = useState(initialEmailId ? "all" : "review")
+  const emails = useApi(() => fetchEmails(wsId, { statuses: toRead(filter), icpId }), [wsId, icpId, filter])
+  const counts = useApi(() => fetchEmailCounts(wsId, icpId), [wsId, icpId])
   const { icps } = useStore()
-  const [filter, setFilter] = useState("review")
   const [search, setSearch] = useState("")
   const [extra, setExtra] = useState<Record<string, string>>({})
   const [page, setPage] = useState(1)
@@ -133,17 +144,26 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
   const openEmail = (id: string) => { setOrder(visible.map((d) => d.id)); setOpenId(id) }
   const open = list.find((d) => d.id === openId) ?? null
   const approved = list.filter((d) => d.status === "approved")
+  // Tab badges: the open tab counts what matches the search and filters; the others are the backend's totals.
+  const tabCount = (f: (typeof FILTERS)[number]) =>
+    f.value === filter
+      ? visible.length
+      : Object.entries(counts.data ?? {}).reduce((n, [s, c]) => (f.test(s as EmailStatus) ? n + (c ?? 0) : n), 0)
+  const reload = () => {
+    emails.reload()
+    counts.reload()
+  }
   const risky = approved.filter(isRisky)
   const toQueue = includeRisky ? approved.length : approved.length - risky.length
 
   const queueApproved = async () => {
     setQueueing(true)
     const ids = approved.filter((d) => includeRisky || !isRisky(d)).map((d) => d.id)
-    if (ids.length && (await queue(wsId, ids, includeRisky ? risky.map((d) => d.id) : []))) emails.reload()
+    if (ids.length && (await queue(wsId, ids, includeRisky ? risky.map((d) => d.id) : []))) reload()
     setQueueing(false)
   }
 
-  if (list.length === 0)
+  if (counts.data && Object.values(counts.data).every((n) => !n))
     return (
       <EmptyState
         icon={Inbox}
@@ -160,7 +180,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
   return (
     <div className="space-y-4">
       <ListTools wsId={wsId} scope={`review-${icpId ?? "all"}`} filters={{ search, filter, ...extra }}
-        onApply={(v) => { setExtra(pickFacets(v, ["icp","scoreBand","hookState","flags","rating","written"])); setSearch(v.search ?? ""); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "review"); setPage(1) }} onRefresh={emails.reload} />
+        onApply={(v) => { setExtra(pickFacets(v, ["icp","scoreBand","hookState","flags","rating","written"])); setSearch(v.search ?? ""); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "review"); setPage(1) }} onRefresh={reload} />
       <Input aria-label="Search review emails" placeholder="Search person, company, address, subject or email text"
         className="max-w-lg" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
       <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"icp",label:"ICP",options:[{value:"none",label:"No ICP"},...icps.map((i)=>({value:i.id,label:i.name}))]},{key:"scoreBand",label:"Email score",options:SCORE_OPTIONS},{key:"hookState",label:"Post hook",options:PRESENCE_OPTIONS},{key:"flags",label:"Flags needing attention",options:PRESENCE_OPTIONS},{key:"rating",label:"Feedback rating",options:[{value:"good",label:"Good"},{value:"bad",label:"Needs work"},{value:"unrated",label:"Not rated"}]},{key:"written",label:"Written date",options:RECENT_OPTIONS}]} />
@@ -178,7 +198,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
                 filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
               )}
             >
-              {f.label} <span className="tabular-nums opacity-70">{matching.filter((d) => f.test(d.status)).length}</span>
+              {f.label} <span className="tabular-nums opacity-70">{tabCount(f)}</span>
             </button>
           ))}
         </div>
@@ -277,7 +297,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
               setOrder((current) => reviewOrderAfterChange(current, openId, next))
               setOpenId(next)
             }
-            emails.reload()
+            reload()
           }}
         />
       )}
