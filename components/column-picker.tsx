@@ -13,6 +13,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+/** A web address that's safe to link to: http or https only (addresses come from LinkedIn, imports and web
+ * searches, so a "javascript:" or "data:" one must never become a link). Anything else gives null: shown as text. */
+export function safeHref(url: string | null | undefined): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url.includes("://") ? url : `https://${url}`)
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null
+  } catch {
+    return null
+  }
+}
+
 /** A column a table can show: its header, what a cell shows, and the plain text a CSV gets. */
 export interface ColumnDef<Row> {
   key: string
@@ -88,7 +100,12 @@ export function ColumnPicker<Row>({
 
 /** A CSV of these rows and columns, downloaded as `filename` (quoted where it needs to be; opens in Excel and Sheets). */
 export function downloadRowsCsv<Row>(filename: string, rows: Row[], columns: ColumnDef<Row>[]) {
-  const quote = (v: string) => (/[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+  // A value starting like a formula (a LinkedIn title "=HYPERLINK(...)", say) would run in Excel or Sheets: it's
+  // written as text, with a leading apostrophe.
+  const quote = (raw: string) => {
+    const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw
+    return /[",\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+  }
   const lines = [columns.map((c) => quote(c.label)).join(","), ...rows.map((r) => columns.map((c) => quote(c.text(r) ?? "")).join(","))]
   // A byte order mark, so Excel reads names with accents correctly.
   const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" })

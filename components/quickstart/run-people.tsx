@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useState } from "react"
 import { ChevronDown, Download } from "lucide-react"
-import { ColumnPicker, type ColumnDef, downloadRowsCsv, useColumns } from "@/components/column-picker"
+import { ColumnPicker, type ColumnDef, downloadRowsCsv, safeHref, useColumns } from "@/components/column-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -11,14 +11,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type QuickstartDetail, type QuickstartPerson, fetchQuickstartPeople, useApi } from "@/lib/api"
 import { shortDate } from "@/lib/format"
 
-const link = (href: string | null, label?: string) =>
-  href ? (
+// Only an http(s) address becomes a link; anything else is shown as text (column-picker.safeHref).
+const link = (raw: string | null, label?: string) => {
+  const href = safeHref(raw)
+  if (!raw) return <span className="text-muted-foreground">—</span>
+  if (!href) return <span>{raw}</span>
+  return (
     <a href={href} target="_blank" rel="noreferrer" className="hover:underline" onClick={(e) => e.stopPropagation()}>
-      {label ?? href.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+      {label ?? raw.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
     </a>
-  ) : (
-    <span className="text-muted-foreground">—</span>
   )
+}
 const plain = (v: string | number | null | undefined) => (v === null || v === undefined || v === "" ? "" : String(v))
 const SOURCE: Record<string, string> = { apify_linkedin: "LinkedIn", apollo: "Apollo", manual: "Added by hand", website: "Their website" }
 

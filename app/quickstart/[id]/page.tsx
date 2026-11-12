@@ -9,6 +9,7 @@ import { BackendError, WorkspaceGate } from "@/components/companies/backend-stat
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
+import { safeHref } from "@/components/column-picker"
 import { RunPeople } from "@/components/quickstart/run-people"
 import { PageHeader } from "@/components/page-header"
 import { RUN_STATUS } from "@/components/quickstart/run-status"
@@ -541,7 +542,10 @@ function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean 
         <div className="space-y-4 text-sm">
           {links.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {links.map(([label, href]) => (
+              {links.flatMap(([label, raw]) => {
+                const href = safeHref(raw)
+                return href ? [[label, href] as const] : []
+              }).map(([label, href]) => (
                 <a key={label} href={href} target="_blank" rel="noreferrer" className="rounded-md border px-2 py-1 text-xs hover:bg-muted">
                   {label}
                 </a>
@@ -556,7 +560,7 @@ function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean 
               <ul className="space-y-2">
                 {c.posts.map((p) => (
                   <li key={p.url} className="text-xs">
-                    <a href={p.url} target="_blank" rel="noreferrer" className="font-medium hover:underline">
+                    <a href={safeHref(p.url) ?? undefined} target="_blank" rel="noreferrer" className="font-medium hover:underline">
                       {p.source === "instagram" ? "Instagram" : "LinkedIn"}, {p.whose === "person" ? "a person there" : "the company"}
                       {p.postedAt ? `, ${shortDate(p.postedAt)}` : ""}
                     </a>

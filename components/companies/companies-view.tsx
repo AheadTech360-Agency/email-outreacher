@@ -42,7 +42,7 @@ import {
   useApi,
   type CompanySource,
 } from "@/lib/api"
-import { ColumnPicker, type ColumnDef, useColumns } from "@/components/column-picker"
+import { ColumnPicker, type ColumnDef, safeHref, useColumns } from "@/components/column-picker"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useAuth } from "@/lib/auth"
 import { canManage, isProspector } from "@/lib/roles"
@@ -63,14 +63,17 @@ const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [
 const needsResearch = (c: CompanyBrief) => c.source !== "lead_intel" && (c.status === "found" || c.status === "error")
 
 /** The company pipeline, for every ICP or one: find, research and score, then find stakeholders at the qualified ones. */
-const linkCell = (href: string | null, label?: string) =>
-  href ? (
+// Only an http(s) address becomes a link; anything else is shown as text (column-picker.safeHref).
+const linkCell = (raw: string | null, label?: string) => {
+  const href = safeHref(raw)
+  if (!raw) return <span className="text-muted-foreground">—</span>
+  if (!href) return <span>{raw}</span>
+  return (
     <a href={href} target="_blank" rel="noreferrer" className="text-[13px] hover:underline" onClick={(e) => e.stopPropagation()}>
-      {label ?? href.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
+      {label ?? raw.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}
     </a>
-  ) : (
-    <span className="text-muted-foreground">—</span>
   )
+}
 const textOf = (v: string | number | null | undefined) => (v === null || v === undefined ? "" : String(v))
 
 /** Columns the Companies table can also show ("More columns"). */
