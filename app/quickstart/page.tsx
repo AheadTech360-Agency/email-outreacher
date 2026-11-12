@@ -187,6 +187,8 @@ function NewRun({ wsId }: { wsId: string }) {
     !(num("posts") >= 0 && num("posts") <= 20) && "Posts per lead: 0 to 20",
     !(limit > 0 && limit <= 500) && "Spend limit: above $0, up to $500",
     cap !== null && limit > cap && `Spend limit: your runs can spend at most ${formatUsd(cap)}`,
+    // The backend refuses the same: a run is checked against its limit between steps, so it must fit at its worst.
+    cap !== null && estimate > cap && `These settings could cost up to ${formatUsd(estimate)}, over your ${formatUsd(cap)} a run: find fewer companies or people`,
     prospector && limits.data === undefined && !limits.error && "Loading your spend limit",
     // A Prospector can't approve companies by hand, so an ICP that verifies no one would end their run empty.
     prospector && icp && !hasRule(icp) && "Add words to recognise them to this ICP first (its Definition, \"Any of these words\")",
