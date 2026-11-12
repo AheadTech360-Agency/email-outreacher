@@ -202,7 +202,7 @@ export function AppSidebar() {
       <SidebarFooter className="gap-3 px-2 pb-3">
         <SidebarMenu className="gap-0.5">
           <BackgroundActivity />
-          {SENDING_URL && (
+          {SENDING_URL && !prospector && (
             <SidebarMenuItem>
               <SidebarMenuButton asChild tooltip="Sending dashboard" className="h-8 text-[14px]">
                 <a href={SENDING_URL}>

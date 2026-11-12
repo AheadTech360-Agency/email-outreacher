@@ -147,12 +147,12 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
       <Tabs defaultValue="overview" className="px-4 pb-10 md:px-8">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="timeline">Timeline</TabsTrigger>
-          <TabsTrigger value="emails">Emails ({theirEmails.length})</TabsTrigger>
+          {!prospector && <TabsTrigger value="timeline">Timeline</TabsTrigger>}
+          {!prospector && <TabsTrigger value="emails">Emails ({theirEmails.length})</TabsTrigger>}
           <TabsTrigger value="posts">Posts ({posts.length})</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="timeline" className="pt-5"><PersonTimeline wsId={wsId} personId={id} /></TabsContent>
+        {!prospector && <TabsContent value="timeline" className="pt-5"><PersonTimeline wsId={wsId} personId={id} /></TabsContent>}
         <TabsContent value="overview" className="pt-5">
           <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div className="divide-y [&>*]:py-6 [&>*:first-child]:pt-0">

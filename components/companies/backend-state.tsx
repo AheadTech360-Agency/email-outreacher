@@ -11,6 +11,15 @@ import { useStore } from "@/lib/store"
 
 /** The backend couldn't be reached or refused the request. Says why and offers a retry. */
 export function BackendError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  // "Company not found" and the like: the backend answered, the thing just isn't there (or isn't shared with you).
+  if (/not found\.?$/i.test(message.trim()))
+    return (
+      <EmptyState
+        icon={CloudOff}
+        title="This isn't here"
+        description={`${message.trim().replace(/\.$/, "")}. It may have been removed, or it isn't shared with you.`}
+      />
+    )
   return (
     <EmptyState
       icon={CloudOff}
