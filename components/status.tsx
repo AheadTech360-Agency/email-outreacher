@@ -1,9 +1,9 @@
 import type { ReactNode } from "react"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { FLAG_LABEL, GENERATION_STATUS_LABEL, LEAD_STATUS_COLOR, LEAD_STATUS_LABEL } from "@/lib/format"
-import { PIPELINE_STAGES, pipeline } from "@/lib/selectors"
+import { PIPELINE_STAGES, leadCount, pipelineOf } from "@/lib/selectors"
 import { cn } from "@/lib/utils"
-import type { GenerationFlag, GenerationStatus, Lead, LeadStatus } from "@/lib/types"
+import type { GenerationFlag, GenerationStatus, LeadStatus } from "@/lib/types"
 
 export type PillTone = "neutral" | "info" | "positive" | "warning" | "negative"
 
@@ -56,9 +56,9 @@ export function GenerationStatusBadge({ status }: { status: GenerationStatus }) 
 }
 
 /** The pipeline of one ICP: approved, waiting for review, ready to draft, not enriched yet, dropped. */
-export function PipelineStrip({ leads, className, legend = true }: { leads: Lead[]; className?: string; legend?: boolean }) {
-  const counts = pipeline(leads)
-  const total = leads.length
+export function PipelineStrip({ statuses, className, legend = true }: { statuses: Partial<Record<LeadStatus, number>>; className?: string; legend?: boolean }) {
+  const counts = pipelineOf(statuses)
+  const total = leadCount(statuses)
   return (
     <div className={cn("space-y-2", className)}>
       <div className="flex h-2 gap-[2px] overflow-hidden rounded-full bg-muted">

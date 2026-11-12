@@ -1,11 +1,13 @@
 "use client"
 
 import { FacetFilters } from "@/components/facet-filters"
-import { choices, pickFacets, presenceMatches, scoreMatches, textMatches, PRESENCE_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+import { choices, pickFacets, PRESENCE_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+import { type CompanyBrief, type CompanyFilters, type CompanyRow, fetchCompaniesPage, fetchMatchingCompanies } from "@/lib/lists"
+import { pickRows, useDebounced } from "@/lib/use-debounced"
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Building2, Check, ChevronDown, DatabaseZap, Download, FileDown, FlaskConical, MapPin, Newspaper, RotateCcw, Search, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
@@ -32,11 +34,8 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
-  type PipelineCompany,
   type PipelineStatus,
   fetchIcps,
-  fetchPipeline,
-  fetchStakeholders,
   researchCompanies,
   decideCompanies,
   downloadCsv,
@@ -60,7 +59,7 @@ const FILTERS: { value: "all" | PipelineStatus; label: string }[] = [
   { value: "error", label: "Couldn't finish" },
 ]
 
-const needsResearch = (c: PipelineCompany) => c.source !== "lead_intel" && (c.status === "found" || c.status === "error")
+const needsResearch = (c: CompanyBrief) => c.source !== "lead_intel" && (c.status === "found" || c.status === "error")
 
 /** The company pipeline, for every ICP or one: find, research and score, then find stakeholders at the qualified ones. */
 export function CompaniesView({ initialIcp }: { initialIcp: string }) {
@@ -84,41 +83,39 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const [icpId, setIcpId] = useState(initialIcp)
   // No ICP picked (or an unknown one) shows every company.
   const activeIcp = icps.data?.find((i) => i.id === icpId)
-  const companies = useApi(() => fetchPipeline(wsId, activeIcp?.id), [wsId, activeIcp?.id])
-  const people = useApi(() => fetchStakeholders(wsId), [wsId])
   const [filter, setFilter] = useState<"all" | PipelineStatus>("all")
-  const [confirmReverify, setConfirmReverify] = useState<PipelineCompany[] | null>(null)
+  const [confirmReverify, setConfirmReverify] = useState<CompanyBrief[] | null>(null)
   const [fillingIn, setFillingIn] = useState<string[] | null>(null)
   const [readingPosts, setReadingPosts] = useState<string[] | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
   const [query, setQuery] = useState("")
   const [extra, setExtra] = useState<Record<string, string>>({})
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Picked companies, with the fields their bulk actions read: kept across pages.
+  const [selected, setSelected] = useState<Map<string, CompanyBrief>>(new Map())
   const [finding, setFinding] = useState<CompanySource | null>(null)
-  const [stakeholdersFor, setStakeholdersFor] = useState<PipelineCompany[] | null>(null)
+  const [stakeholdersFor, setStakeholdersFor] = useState<CompanyBrief[] | null>(null)
   const [busy, setBusy] = useState("")
 
   const [archiveFilter, setArchiveFilter] = useState("active")
-  const list = (companies.data ?? []).filter((row) => archiveFilter === "all" || (archiveFilter === "archived" ? row.archived : !row.archived))
+  // The server filters, counts and pages; typing waits for a pause before it asks.
+  const typedQuery = useDebounced(query)
+  const typedLocation = useDebounced(extra.location ?? "")
+  const filters: CompanyFilters = useMemo(() => ({
+    icpId: activeIcp?.id, archive: archiveFilter, status: filter, q: typedQuery, source: extra.source, location: typedLocation,
+    website: extra.website, contacts: extra.contacts, scoreBand: extra.scoreBand, icpState: extra.icpState,
+  }), [activeIcp?.id, archiveFilter, filter, typedQuery, extra.source, typedLocation, extra.website, extra.contacts, extra.scoreBand, extra.icpState])  // prettier-ignore
+  const companies = useApi(() => fetchCompaniesPage(wsId, filters, page, pageSize), [wsId, filters, page, pageSize])
+  // Every match, only while something is picked (for "Select all N matching" and what's outside these filters).
+  const matching = useApi(() => (selected.size ? fetchMatchingCompanies(wsId, filters) : Promise.resolve(null)), [wsId, filters, selected.size > 0])
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const counts = Object.fromEntries(FILTERS.map((f) => [f.value, f.value === "all" ? list.length : list.filter((c) => c.status === f.value).length]))
-  const peopleAt = new Map<string, number>()
-  for (const p of people.data ?? []) if (p.pipelineCompanyId) peopleAt.set(p.pipelineCompanyId, (peopleAt.get(p.pipelineCompanyId) ?? 0) + 1)
-
-  const q = query.trim().toLowerCase()
-  const visible = list.filter(
-    (c) => (filter === "all" || c.status === filter) &&
-      (!extra.source || extra.source === "all" || c.source === extra.source) &&
-      textMatches(extra.location, c.city, c.state) && presenceMatches(c.websiteUrl || c.domain, extra.website) &&
-      presenceMatches(peopleAt.get(c.id), extra.contacts) && scoreMatches(c.score, extra.scoreBand) &&
-      presenceMatches(c.icpId, extra.icpState) && (!q || `${c.name} ${c.domain ?? ""}`.toLowerCase().includes(q)),
-  )
-  // One page of the filtered companies; a filter that shrinks the list past this page shows its last page.
-  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
-  const current = Math.min(page, pages)
-  const shown = visible.slice((current - 1) * pageSize, current * pageSize)
-  const picked = list.filter((c) => selected.has(c.id))
+  const counts = companies.data?.counts ?? {}
+  const total = companies.data?.total ?? 0
+  const shown: CompanyRow[] = companies.data?.items ?? []
+  const current = page
+  // A page past the end (rows left the filter, or were deleted) moves back to the last page.
+  if (companies.data && !companies.data.items.length && total > 0 && page > 1) setPage(Math.max(1, Math.ceil(total / pageSize)))
+  const picked = [...selected.values()]
   const toResearch = picked.filter(needsResearch)
   // Verified before (by Claude, or decided by hand): verify again with the current prompt.
   const toReverify = picked.filter((c) => c.source !== "lead_intel" && !needsResearch(c))
@@ -126,10 +123,11 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const toDecide = picked.filter((c) => c.status !== "found")
   const qualified = picked.filter((c) => c.status === "qualified")
   const allChecked = shown.length > 0 && shown.every((c) => selected.has(c.id))
+  const brief = (c: CompanyRow): CompanyBrief => ({ id: c.id, status: c.status, source: c.source, researchedAt: c.researchedAt, name: c.name, domain: c.domain })
 
   const changeIcp = (id: string) => {
     setIcpId(id)
-    setSelected(new Set())
+    setSelected(new Map())
     setPage(1)
     router.replace(id === "all" ? "/companies" : `/companies?icp=${id}`, { scroll: false })
   }
@@ -155,15 +153,9 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
   const next = actions.find((a) => a.key === nextKey)
   const more = actions.filter((a) => a.key !== nextKey)
 
-  const toggle = (id: string, on: boolean) =>
-    setSelected((s) => {
-      const next = new Set(s)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
+  const toggle = (c: CompanyRow, on: boolean) => setSelected((s) => pickRows(s, [brief(c)], on))
 
-  const research = async (targets: PipelineCompany[]) => {
+  const research = async (targets: CompanyBrief[]) => {
     setBusy("research")
     const verb = targets.some((c) => c.researchedAt) ? "Verifying" : "Researching"
     const id = toast.loading(`${verb} ${targets.length} ${targets.length === 1 ? "company" : "companies"}… this can take a minute`)
@@ -184,7 +176,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         id,
         description: [r.costUsd ? `Apify charged ${formatUsd(r.costUsd)}.` : "", ...new Set(r.notes)].filter(Boolean).join(" ") || undefined,
       })
-      setSelected(new Set())
+      setSelected(new Map())
       companies.reload()
     } catch (e) {
       toast.error("Research failed", { id, description: e instanceof Error ? e.message : undefined })
@@ -198,7 +190,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
     try {
       const r = await decideCompanies(wsId, ids, status)
       toast.success(`${status === "qualified" ? "Approved" : "Rejected"} ${r.changed} ${r.changed === 1 ? "company" : "companies"}`)
-      setSelected(new Set())
+      setSelected(new Map())
       companies.reload()
     } catch (e) {
       toast.error("Couldn't change them", { description: e instanceof Error ? e.message : undefined })
@@ -270,7 +262,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         </div>
       </div>
 
-      {counts.review > 0 && filter !== "review" && (
+      {(counts.review ?? 0) > 0 && filter !== "review" && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
           <span>
             {counts.review} {counts.review === 1 ? "company waits" : "companies wait"} for you to approve or reject, under the threshold
@@ -284,10 +276,10 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
 
       {/* One row: more filters and which records, then saved views. The fields open under it. */}
       <div className="flex flex-wrap items-center gap-2">
-        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"source",label:"Company source",options:choices(list.map((c)=>c.source))},{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
-        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Set()); setPage(1) }} />
+        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"source",label:"Company source",options:choices(companies.data?.sources ?? [])},{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
+        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Map()); setPage(1) }} />
         <div className="ml-auto">
-          <ListTools wsId={wsId} scope="companies" filters={{ query, icpId, filter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["source","location","website","contacts","scoreBand","icpState"])); setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(["all", "review", "qualified", "found", "not_fit", "error"].includes(v.filter) ? v.filter as "all" | PipelineStatus : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Set()); setPage(1) }} onRefresh={() => { companies.reload(); people.reload() }} />
+          <ListTools wsId={wsId} scope="companies" filters={{ query, icpId, filter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["source","location","website","contacts","scoreBand","icpState"])); setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(["all", "review", "qualified", "found", "not_fit", "error"].includes(v.filter) ? v.filter as "all" | PipelineStatus : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Map()); setPage(1) }} onRefresh={() => companies.reload()} />
         </div>
       </div>
       <div role="tablist" aria-label="Filter by status" className="flex flex-wrap gap-1.5">
@@ -303,7 +295,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            {f.label} <span className="tabular-nums opacity-70">{counts[f.value]}</span>
+            {f.label} <span className="tabular-nums opacity-70">{counts[f.value] ?? 0}</span>
           </button>
         ))}
       </div>
@@ -311,12 +303,14 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
-          <BulkSelection matchingIds={visible.map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={selected} onChange={setSelected} disabled={!!busy} />
+          <BulkSelection matchingIds={(matching.data ?? []).map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={new Set(selected.keys())}
+            onChange={(ids) => setSelected((s) => new Map([...ids].map((id) => [id, s.get(id) ?? (matching.data ?? []).find((m) => m.id === id)!]).filter(([, row]) => row) as [string, CompanyBrief][]))}
+            disabled={!!busy || !matching.data} />
           <ArchiveRecordsButton workspaceId={wsId} kind="company" ids={picked.map((row) => row.id)} restore={archiveFilter === "archived"} disabled={!!busy}
-            onChanged={() => { setSelected(new Set()); companies.reload() }} />
+            onChanged={() => { setSelected(new Map()); companies.reload() }} />
           <DeleteRecordsButton workspaceId={wsId} kind="company" ids={picked.map((row) => row.id)} disabled={!!busy}
-            onDeleted={() => { setSelected(new Set()); setPage(1); companies.reload(); people.reload() }} />
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            onDeleted={() => { setSelected(new Map()); setPage(1); companies.reload() }} />
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
             Clear
           </Button>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -350,7 +344,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         <BackendError message={companies.error} onRetry={companies.reload} />
       ) : companies.loading && !companies.data ? (
         <TableSkeleton rows={6} />
-      ) : list.length === 0 ? (
+      ) : (counts.all ?? 0) === 0 ? (
         <EmptyState
           icon={Building2}
           title={activeIcp ? `No companies for ${activeIcp.name} yet` : "No companies yet"}
@@ -369,7 +363,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             </div>
           }
         />
-      ) : visible.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState icon={Search} title="No companies match" description="Try another status or search." />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -381,11 +375,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                     aria-label="Select this page"
                     checked={allChecked}
                     onCheckedChange={(v) =>
-                      setSelected((set) => {
-                        const next = new Set(set)
-                        shown.forEach((c) => (v === true ? next.add(c.id) : next.delete(c.id)))
-                        return next
-                      })
+                      setSelected((set) => pickRows(set, shown.map(brief), v === true))
                     }
                   />
                 </TableHead>
@@ -404,7 +394,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
               {shown.map((c) => (
                 <TableRow key={c.id} className="cursor-pointer" onClick={() => router.push(`/companies/${c.id}`)}>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <Checkbox aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onCheckedChange={(v) => toggle(c.id, v === true)} />
+                    <Checkbox aria-label={`Select ${c.name}`} checked={selected.has(c.id)} onCheckedChange={(v) => toggle(c, v === true)} />
                   </TableCell>
                   <TableCell className="max-w-64">
                     <p className="truncate font-medium">{c.name}</p>
@@ -422,13 +412,13 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{c.score ?? "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {peopleAt.get(c.id) ? (
+                    {c.peopleCount ? (
                       <Link
                         href={`/companies/${c.id}?tab=people`}
                         className="text-data hover:underline"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {peopleAt.get(c.id)}
+                        {c.peopleCount}
                       </Link>
                     ) : (
                       "—"
@@ -436,11 +426,11 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                   </TableCell>
                   <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                     {c.status === "qualified" ? (
-                      <Button size="sm" variant="outline" onClick={() => setStakeholdersFor([c])}>
+                      <Button size="sm" variant="outline" onClick={() => setStakeholdersFor([brief(c)])}>
                         <UserSearch /> People
                       </Button>
-                    ) : needsResearch(c) ? (
-                      <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy} onClick={() => void research([c])}>
+                    ) : needsResearch(brief(c)) ? (
+                      <ManagerOnly><Button size="sm" variant="outline" disabled={!!busy} onClick={() => void research([brief(c)])}>
                         <FlaskConical /> Research
                       </Button></ManagerOnly>
                     ) : null}
@@ -453,7 +443,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
             <Pager
               page={current}
               pageSize={pageSize}
-              total={visible.length}
+              total={total}
               onPage={setPage}
               onPageSize={(n) => (setPageSize(n), setPage(1))}
             />
@@ -494,8 +484,8 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           companies={stakeholdersFor}
           onClose={() => setStakeholdersFor(null)}
           onDone={() => {
-            setSelected(new Set())
-            people.reload()
+            setSelected(new Map())
+            companies.reload()
           }}
         />
       )}
@@ -505,7 +495,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           companyIds={readingPosts}
           onClose={() => setReadingPosts(null)}
           onDone={() => {
-            setSelected(new Set())
+            setSelected(new Map())
             companies.reload()
           }}
         />
@@ -516,7 +506,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
           companyIds={fillingIn}
           onClose={() => setFillingIn(null)}
           onDone={() => {
-            setSelected(new Set())
+            setSelected(new Map())
             companies.reload()
           }}
         />

@@ -1,11 +1,13 @@
 "use client"
 
 import { FacetFilters } from "@/components/facet-filters"
-import { choices, pickFacets, presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
+import { choices, pickFacets, PRESENCE_OPTIONS } from "@/lib/facets"
+import { type PeopleFilters, type PersonBrief, type PersonRow, fetchMatchingPeople, fetchPeopleLeadIds, fetchPeoplePage } from "@/lib/lists"
+import { pickRows, useDebounced } from "@/lib/use-debounced"
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronDown, DatabaseZap, Download, ExternalLink, FileUp, MailCheck, Newspaper, Search, Sparkles, UserPlus, UserSearch } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
@@ -30,12 +32,9 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
-  type ApiPost,
   type Stakeholder,
   addAsLeads,
   downloadCsv,
-  fetchAllStakeholders,
-  fetchPipeline,
   fetchIcps,
   fetchPosts,
   generateEmails,
@@ -77,9 +76,6 @@ function emailCell(s: Stakeholder): { text: string; tone: PillTone } {
 }
 
 /** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
-const isVerified = (s: Stakeholder) => !!s.email && ["verified", "valid"].includes((s.emailStatus ?? "").toLowerCase())
-
-
 /** Everyone found for this workspace, by company, ICP or LinkedIn, and turning them into leads with posts. */
 export function PeopleView() {
   return (
@@ -98,23 +94,17 @@ export function PeopleView() {
 function PeopleList({ wsId }: { wsId: string }) {
   const router = useRouter()
   const { me } = useAuth()
-  const people = useApi(() => fetchAllStakeholders(wsId), [wsId])
   // Adding, importing and revealing people can make leads, and fetching changes post counts, so the
   // shared leads list reloads whenever this list does.
   const { reloadLeads } = useStore()
-  useEffect(() => {
-    if (people.data) reloadLeads()
-  }, [people.data, reloadLeads])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
-  // Names of the pipeline companies people were found at; the rest carry their employer's name as found.
-  const companies = useApi(() => fetchPipeline(wsId), [wsId])
-  const posts = useApi(() => fetchPosts(wsId), [wsId])
   const [query, setQuery] = useState("")
   const [extra, setExtra] = useState<Record<string, string>>({})
   const [foundBy, setFoundBy] = useState("all")
   const [status, setStatus] = useState("all")
   const [emailFilter, setEmailFilter] = useState("all")
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Picked people, with the fields their bulk actions read: kept across pages.
+  const [selected, setSelected] = useState<Map<string, PersonBrief>>(new Map())
   const [confirmingReveal, setConfirmingReveal] = useState(false)
   const [confirmingWrite, setConfirmingWrite] = useState(false)
   const [fillingIn, setFillingIn] = useState(false)
@@ -126,44 +116,33 @@ function PeopleList({ wsId }: { wsId: string }) {
   const [pageSize, setPageSize] = useState(50)
 
   const [archiveFilter, setArchiveFilter] = useState("active")
-  const list = (people.data ?? []).filter((row) => archiveFilter === "all" || (archiveFilter === "archived" ? row.archived : !row.archived))
+  // The server filters and pages; typing waits for a pause before it asks.
+  const typedQuery = useDebounced(query)
+  const typedCompany = useDebounced(extra.companyText ?? "")
+  const filters: PeopleFilters = useMemo(() => ({
+    archive: archiveFilter, q: typedQuery, foundBy, status, email: emailFilter, linkedin: extra.linkedin, postState: extra.postState,
+    emailState: extra.emailState, companyText: typedCompany,
+  }), [archiveFilter, typedQuery, foundBy, status, emailFilter, extra.linkedin, extra.postState, extra.emailState, typedCompany])  // prettier-ignore
+  const people = useApi(() => fetchPeoplePage(wsId, filters, page, pageSize), [wsId, filters, page, pageSize])
+  // Adding, importing and revealing people can make leads, so pages showing leads refresh when this list does.
+  useEffect(() => {
+    if (people.data) reloadLeads()
+  }, [people.data, reloadLeads])
+  // Every match, only when needed: while people are picked (Select all N matching) or for Delete all without email.
+  const needAll = selected.size > 0 || emailFilter === "none"
+  const matching = useApi(() => (needAll ? fetchMatchingPeople(wsId, filters) : Promise.resolve(null)), [wsId, filters, needAll])
+  // The posts of the person whose posts are open, read when they're opened.
+  const readingLead = reading?.leadId ?? null
+  const posts = useApi(() => (readingLead ? fetchPosts(wsId, readingLead) : Promise.resolve([])), [wsId, readingLead])
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const companyName = new Map((companies.data ?? []).map((c) => [c.id, c.name]))
-  const company = (s: Stakeholder) => (s.pipelineCompanyId && companyName.get(s.pipelineCompanyId)) || s.organizationName || "—"
-  const postsByLead = new Map<string, ApiPost[]>()
-  for (const p of posts.data ?? []) postsByLead.set(p.leadId, [...(postsByLead.get(p.leadId) ?? []), p])
+  const total = people.data?.total ?? 0
+  const shown: PersonRow[] = people.data?.items ?? []
+  const brief = (s: PersonRow): PersonBrief => ({ id: s.id, email: s.email, revealedAt: s.revealedAt, linkedinUrl: s.linkedinUrl, leadId: s.leadId })
 
-  const q = query.trim().toLowerCase()
-  const visible = list.filter(
-    (s) =>
-      presenceMatches(s.linkedinUrl, extra.linkedin) && presenceMatches(s.leadId && (postsByLead.get(s.leadId)?.length ?? 0), extra.postState) &&
-      textMatches(extra.companyText, company(s)) &&
-      (!extra.emailState || extra.emailState === "all" || (s.emailStatus || "unknown") === extra.emailState) &&
-      (foundBy === "all" ||
-        (foundBy === "company"
-          ? s.source === "apollo" && !s.icpId
-          : foundBy === "linkedin"
-            ? s.source === "apify_linkedin"
-            : foundBy === "manual"
-              ? s.source === "manual"
-              : s.icpId === foundBy)) &&
-      (status === "all" ||
-        (status === "lead"
-          ? !!s.queuedAt
-          : status === "notlead"
-            ? !s.queuedAt
-            : status === "revealed"
-              ? !!s.revealedAt
-              : !s.revealedAt)) &&
-      (emailFilter === "all" ||
-        (emailFilter === "none" ? !s.email?.trim() : emailFilter === "verified" ? isVerified(s) : !!s.email?.trim())) &&
-      (!q || `${s.firstName} ${s.lastName} ${s.title} ${company(s)} ${s.email ?? ""}`.toLowerCase().includes(q)),
-  )
-  // One page of the filtered people; a filter that shrinks the list past this page shows its last page.
-  const pages = Math.max(1, Math.ceil(visible.length / pageSize))
-  const current = Math.min(page, pages)
-  const shown = visible.slice((current - 1) * pageSize, current * pageSize)
-  const picked = list.filter((s) => selected.has(s.id))
+  const current = page
+  // A page past the end (people left the filter, or were deleted) moves back to the last page.
+  if (people.data && !people.data.items.length && total > 0 && page > 1) setPage(Math.max(1, Math.ceil(total / pageSize)))
+  const picked = [...selected.values()]
   // People who already have an email (from the LinkedIn email search) aren't revealed again: that would spend a credit.
   const toReveal = picked.filter((s) => !s.revealedAt && !s.email)
   const withLinkedin = picked.filter((s) => s.linkedinUrl)
@@ -189,13 +168,7 @@ function PeopleList({ wsId }: { wsId: string }) {
   const next = actions.find((a) => a.key === nextKey)
   const more = actions.filter((a) => a.key !== nextKey)
 
-  const toggle = (id: string, on: boolean) =>
-    setSelected((set) => {
-      const next = new Set(set)
-      if (on) next.add(id)
-      else next.delete(id)
-      return next
-    })
+  const toggle = (s: PersonRow, on: boolean) => setSelected((set) => pickRows(set, [brief(s)], on))
 
   const reveal = async () => {
     setBusy("reveal")
@@ -211,7 +184,7 @@ function PeopleList({ wsId }: { wsId: string }) {
               .filter(Boolean)
               .join(" ") || undefined,
         })
-      setSelected(new Set())
+      setSelected(new Map())
       people.reload()
     } catch (e) {
       toast.error("Couldn't reveal", { description: e instanceof Error ? e.message : undefined })
@@ -229,9 +202,10 @@ function PeopleList({ wsId }: { wsId: string }) {
     if (missing.length) {
       try {
         for (const group of chunks(missing, 100)) await addAsLeads(wsId, group)
-        const fresh = await fetchAllStakeholders(wsId)
-        const byId = new Map(fresh.map((x) => [x.id, x.leadId]))
-        ids = writable.map((s) => byId.get(s.id) ?? s.leadId).filter((x): x is string => !!x)
+        // Their leads now: read for just these people, not the whole list.
+        const byId: Record<string, string | null> = {}
+        for (const group of chunks(writable.map((s) => s.id), 1000)) Object.assign(byId, await fetchPeopleLeadIds(wsId, group))
+        ids = writable.map((s) => byId[s.id] ?? s.leadId).filter((x): x is string => !!x)
       } catch (e) {
         toast.error("Couldn't get them ready", { description: e instanceof Error ? e.message : undefined })
         return setBusy("")
@@ -255,7 +229,7 @@ function PeopleList({ wsId }: { wsId: string }) {
       const description = [cost ? `Claude cost ${formatUsd(cost)}.` : "", ...reasons].filter(Boolean).join(" ") || undefined
       if (drafted) toast.success(summary, { id, description, action: { label: "Review", onClick: () => router.push("/review") } })
       else toast.error(summary, { id, description })
-      setSelected(new Set())
+      setSelected(new Map())
     } catch (e) {
       // What was written before the failure is kept in Review.
       toast.error(drafted ? `Stopped after ${drafted} drafted` : "Couldn't write them", { id, description: e instanceof Error ? e.message : undefined })
@@ -369,30 +343,32 @@ function PeopleList({ wsId }: { wsId: string }) {
 
       {/* One row: more filters and which records, then saved views. The fields open under it. */}
       <div className="flex flex-wrap items-center gap-2">
-        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},{key:"postState",label:"Fetched personal posts",options:PRESENCE_OPTIONS},{key:"emailState",label:"Email verification status",options:choices(list.map((p)=>p.emailStatus || "unknown"))},{key:"companyText",label:"Employer",type:"text",placeholder:"Search company name"}]} />
-        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Set()); setPage(1) }} />
+        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},{key:"postState",label:"Fetched personal posts",options:PRESENCE_OPTIONS},{key:"emailState",label:"Email verification status",options:choices(people.data?.emailStatuses ?? [])},{key:"companyText",label:"Employer",type:"text",placeholder:"Search company name"}]} />
+        <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Map()); setPage(1) }} />
         <div className="ml-auto">
-          <ListTools wsId={wsId} scope="people" filters={{ query, foundBy, status, emailFilter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["linkedin","postState","emailState","companyText"])); setQuery(v.query ?? ""); setFoundBy(v.foundBy ?? "all"); setStatus(["all", "hidden", "revealed", "lead", "notlead"].includes(v.status) ? v.status : "all"); setEmailFilter(["all", "none", "has", "verified"].includes(v.emailFilter) ? v.emailFilter : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Set()); setPage(1) }} onRefresh={() => { people.reload(); posts.reload() }} />
+          <ListTools wsId={wsId} scope="people" filters={{ query, foundBy, status, emailFilter, archive: archiveFilter, ...extra }} onApply={(v) => { setExtra(pickFacets(v, ["linkedin","postState","emailState","companyText"])); setQuery(v.query ?? ""); setFoundBy(v.foundBy ?? "all"); setStatus(["all", "hidden", "revealed", "lead", "notlead"].includes(v.status) ? v.status : "all"); setEmailFilter(["all", "none", "has", "verified"].includes(v.emailFilter) ? v.emailFilter : "all"); setArchiveFilter(["active", "archived", "all"].includes(v.archive) ? v.archive : "active"); setSelected(new Map()); setPage(1) }} onRefresh={() => people.reload()} />
         </div>
       </div>
-      {emailFilter === "none" && visible.length > 0 && (
+      {emailFilter === "none" && total > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md border p-3">
-          <span className="text-sm">{visible.length} matching people without email addresses</span>
-          <DeleteRecordsButton workspaceId={wsId} kind="person" ids={visible.map((row) => row.id)}
-            noEmailOnly label={`Delete all ${visible.length} without email`} disabled={!!busy || visible.length > 5000}
-            onDeleted={() => { setSelected(new Set()); setPage(1); people.reload(); posts.reload(); reloadLeads() }} />
-          {visible.length > 5000 && <p className="text-xs text-muted-foreground">Narrow the filters to 5,000 people or fewer.</p>}
+          <span className="text-sm">{total} matching people without email addresses</span>
+          <DeleteRecordsButton workspaceId={wsId} kind="person" ids={(matching.data ?? []).map((row) => row.id)}
+            noEmailOnly label={`Delete all ${total} without email`} disabled={!!busy || total > 5000 || !matching.data}
+            onDeleted={() => { setSelected(new Map()); setPage(1); people.reload(); reloadLeads() }} />
+          {total > 5000 && <p className="text-xs text-muted-foreground">Narrow the filters to 5,000 people or fewer.</p>}
         </div>
       )}
       {picked.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2">
           <span className="text-sm tabular-nums">{picked.length} selected</span>
-          <BulkSelection matchingIds={visible.map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={selected} onChange={setSelected} disabled={!!busy} />
+          <BulkSelection matchingIds={(matching.data ?? []).map((row) => row.id)} pageIds={shown.map((row) => row.id)} selected={new Set(selected.keys())}
+            onChange={(ids) => setSelected((s) => new Map([...ids].map((id) => [id, s.get(id) ?? (matching.data ?? []).find((m) => m.id === id)!]).filter(([, row]) => row) as [string, PersonBrief][]))}
+            disabled={!!busy || !matching.data} />
           <ArchiveRecordsButton workspaceId={wsId} kind="person" ids={picked.map((row) => row.id)} restore={archiveFilter === "archived"} disabled={!!busy}
-            onChanged={() => { setSelected(new Set()); people.reload() }} />
+            onChanged={() => { setSelected(new Map()); people.reload() }} />
           <DeleteRecordsButton workspaceId={wsId} kind="person" ids={picked.map((row) => row.id)} disabled={!!busy}
-            onDeleted={() => { setSelected(new Set()); setPage(1); people.reload(); posts.reload(); reloadLeads() }} />
-          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            onDeleted={() => { setSelected(new Map()); setPage(1); people.reload(); reloadLeads() }} />
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Map())}>
             Clear
           </Button>
           <div className="ml-auto flex flex-wrap gap-2">
@@ -422,7 +398,11 @@ function PeopleList({ wsId }: { wsId: string }) {
         </div>
       )}
 
-      {list.length === 0 ? (
+      {people.error && !people.data ? (
+        <BackendError message={people.error} onRetry={people.reload} />
+      ) : !people.data ? (
+        <TableSkeleton rows={6} />
+      ) : people.data.baseTotal === 0 ? (
         <EmptyState
           icon={UserSearch}
           title="Nobody found yet"
@@ -441,7 +421,7 @@ function PeopleList({ wsId }: { wsId: string }) {
             </div>
           }
         />
-      ) : visible.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState icon={Search} title="Nobody matches" description="Try another filter or search." />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -453,11 +433,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                     aria-label="Select this page"
                     checked={allChecked}
                     onCheckedChange={(v) =>
-                      setSelected((set) => {
-                        const next = new Set(set)
-                        shown.forEach((s) => (v === true ? next.add(s.id) : next.delete(s.id)))
-                        return next
-                      })
+                      setSelected((set) => pickRows(set, shown.map(brief), v === true))
                     }
                   />
                 </TableHead>
@@ -472,14 +448,13 @@ function PeopleList({ wsId }: { wsId: string }) {
             <TableBody>
               {shown.map((s) => {
                 const cell = emailCell(s)
-                const leadPosts = s.leadId ? (postsByLead.get(s.leadId) ?? []) : []
                 return (
                   <TableRow key={s.id} className="cursor-pointer" onClick={() => router.push(`/people/${s.id}`)}>
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         aria-label={`Select ${s.firstName}`}
                         checked={selected.has(s.id)}
-                        onCheckedChange={(v) => toggle(s.id, v === true)}
+                        onCheckedChange={(v) => toggle(s, v === true)}
                       />
                     </TableCell>
                     <TableCell className="max-w-64">
@@ -495,10 +470,10 @@ function PeopleList({ wsId }: { wsId: string }) {
                           className="hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {company(s)}
+                          {s.companyName}
                         </Link>
                       ) : (
-                        company(s)
+                        s.companyName
                       )}
                     </TableCell>
                     <TableCell>
@@ -539,7 +514,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                             className="text-xs text-data hover:underline tabular-nums"
                             onClick={() => setReading(s)}
                           >
-                            {leadPosts.length ? `${leadPosts.length} ${leadPosts.length === 1 ? "post" : "posts"}` : "No posts yet"}
+                            {s.postCount ? `${s.postCount} ${s.postCount === 1 ? "post" : "posts"}` : "No posts yet"}
                           </button>
                         </div>
                       ) : (
@@ -556,7 +531,7 @@ function PeopleList({ wsId }: { wsId: string }) {
             <Pager
               page={current}
               pageSize={pageSize}
-              total={visible.length}
+              total={total}
               onPage={setPage}
               onPageSize={(n) => {
                 setPageSize(n)
@@ -573,7 +548,7 @@ function PeopleList({ wsId }: { wsId: string }) {
           personIds={withLinkedin.map((s) => s.id)}
           onClose={() => setFillingIn(false)}
           onDone={() => {
-            setSelected(new Set())
+            setSelected(new Map())
             people.reload()
           }}
         />
@@ -590,8 +565,7 @@ function PeopleList({ wsId }: { wsId: string }) {
           personIds={picked.map((s) => s.id)}
           onClose={() => setFetchingPosts(false)}
           onDone={() => {
-            setSelected(new Set())
-            posts.reload()
+            setSelected(new Map())
             people.reload()
           }}
         />
@@ -599,8 +573,8 @@ function PeopleList({ wsId }: { wsId: string }) {
       {reading && (
         <PostsSheet
           name={`${reading.firstName} ${reading.lastName}`.trim()}
-          posts={reading.leadId ? (postsByLead.get(reading.leadId) ?? []) : []}
-          loading={posts.loading && !posts.data}
+          posts={posts.data ?? []}
+          loading={posts.loading}
           onClose={() => setReading(null)}
         />
       )}

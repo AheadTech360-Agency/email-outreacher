@@ -10,14 +10,17 @@ import { PageHeader } from "@/components/page-header"
 import { Skeleton } from "@/components/ui/skeleton"
 import { PipelineStrip } from "@/components/status"
 import { useIcpParam } from "@/hooks/use-icp"
-import { pipeline } from "@/lib/selectors"
+import { leadCount, pipelineOf } from "@/lib/selectors"
+import { useLeadSummary } from "@/lib/lists"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 export default function IcpLayout({ children }: { children: ReactNode }) {
   const icp = useIcpParam()
   const pathname = usePathname()
-  const { leads, icpsStatus, icpsError, reloadIcps } = useStore()
+  const { leadsVersion, currentWorkspaceId, icpsStatus, icpsError, reloadIcps } = useStore()
+  // The ICP's leads per status, counted by the server.
+  const summary = useLeadSummary(currentWorkspaceId, leadsVersion)
 
   // ICPs load from the backend; only call it missing once they have.
   if (!icp && icpsStatus === "error")
@@ -35,13 +38,13 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
     )
   if (!icp) notFound()
 
-  const icpLeads = leads.filter((l) => l.icpId === icp.id)
-  const counts = pipeline(icpLeads)
+  const statuses = summary.of(icp.id)
+  const counts = pipelineOf(statuses)
   const base = `/icps/${icp.id}`
   const tabs = [
     { href: "", label: "Definition" },
     { href: "/prompts", label: "Prompts" },
-    { href: "/leads", label: "Leads", count: icpLeads.length, also: ["/import"] },
+    { href: "/leads", label: "Leads", count: leadCount(statuses), also: ["/import"] },
     { href: "/review", label: "Review", count: counts.review },
   ]
 
@@ -60,7 +63,7 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
           description={`${icp.enabled ? "" : "Archived · "}${icp.description || `${icp.industry} · from Lead Intel`}`}
           actions={<IcpLifecycleActions icp={icp} />}
         >
-          <PipelineStrip leads={icpLeads} className="max-w-3xl" />
+          <PipelineStrip statuses={statuses} className="max-w-3xl" />
         </PageHeader>
       </div>
       <nav className="flex gap-6 overflow-x-auto overflow-y-hidden border-b px-4 md:px-8" aria-label="ICP sections">

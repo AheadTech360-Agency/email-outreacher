@@ -1,10 +1,12 @@
 "use client"
 
 import { FacetFilters } from "@/components/facet-filters"
-import { pickFacets, presenceMatches, recentMatches, scoreMatches, PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+import { pickFacets, PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+import { type EmailFilters as EmailListFilters, fetchEmail, fetchEmailBriefs, fetchEmailIds, fetchEmailsPage } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
 
 import Link from "next/link"
-import { Suspense, useState } from "react"
+import { Suspense, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft, ArrowRight, Check, ExternalLink, Inbox, RotateCcw, Save, Send, Sparkles, X } from "lucide-react"
 import { toast } from "sonner"
@@ -25,14 +27,13 @@ import { Label } from "@/components/ui/label"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { type EmailDraft, type EmailStatus, fetchEmailCounts, fetchEmails, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
+import { type EmailDraft, type EmailStatus, fetchEmailCounts, generateEmails, queueEmails, updateEmail, useApi } from "@/lib/api"
 import { confirmKind, confirmNote, needsConfirm } from "@/lib/email-status"
 import { formatUsd, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
-// Each tab reads only its own statuses from the backend (sent emails pile up, and every email read costs database
-// egress); `statuses` undefined is every status.
+// Each tab reads only its own statuses from the backend, a page at a time; `statuses` undefined is every status.
 const FILTERS: { value: string; label: string; statuses?: EmailStatus[]; test: (s: EmailStatus) => boolean }[] = [
   { value: "review", label: "To review", statuses: ["draft", "edited"], test: (s) => s === "draft" || s === "edited" },
   { value: "approved", label: "Approved", statuses: ["approved"], test: (s) => s === "approved" },
@@ -41,12 +42,6 @@ const FILTERS: { value: string; label: string; statuses?: EmailStatus[]; test: (
   { value: "all", label: "All", test: () => true },
 ]
 
-/** What a tab reads: its statuses, and always the approved emails (few), for Queue all and so an email just
- * approved stays open. */
-const toRead = (filter: string): EmailStatus[] | undefined => {
-  const statuses = FILTERS.find((f) => f.value === filter)?.statuses
-  return statuses ? [...new Set<EmailStatus>([...statuses, "approved"])] : undefined
-}
 
 const STATUS: Record<EmailStatus, { label: string; tone: PillTone }> = {
   draft: { label: "Draft", tone: "info" },
@@ -109,10 +104,7 @@ function DraftsWorkspace({ icpId }: { icpId?: string }) {
 function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
   wsId: string; icpId?: string; initialEmailId: string | null; onClearEmailLink: () => void
 }) {
-  // An email opened from a link may be in any tab: start on All then.
-  const [filter, setFilter] = useState(initialEmailId ? "all" : "review")
-  const emails = useApi(() => fetchEmails(wsId, { statuses: toRead(filter), icpId }), [wsId, icpId, filter])
-  const counts = useApi(() => fetchEmailCounts(wsId, icpId), [wsId, icpId])
+  const [filter, setFilter] = useState("review")
   const { icps } = useStore()
   const [search, setSearch] = useState("")
   const [extra, setExtra] = useState<Record<string, string>>({})
@@ -124,41 +116,52 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
   const [queueing, setQueueing] = useState(false)
   // Risky addresses are queued only when ticked in the confirm dialog: each batch of them is its own decision.
   const [includeRisky, setIncludeRisky] = useState(false)
+  // Goes up after any change, so the page, the counts, the approved emails and the open email are read again.
+  const [version, setVersion] = useState(0)
+
+  // The server filters, counts and pages; typing waits for a pause before it asks.
+  const typedSearch = useDebounced(search)
+  const filters: EmailListFilters = useMemo(() => ({
+    statuses: FILTERS.find((f) => f.value === filter)?.statuses, icpId, icp: extra.icp, search: typedSearch, scoreBand: extra.scoreBand,
+    hook: extra.hookState, flags: extra.flags, rating: extra.rating, written: extra.written,
+  }), [filter, icpId, extra.icp, typedSearch, extra.scoreBand, extra.hookState, extra.flags, extra.rating, extra.written])  // prettier-ignore
+  const emails = useApi(() => fetchEmailsPage(wsId, filters, page, pageSize), [wsId, filters, page, pageSize, version])
+  const counts = useApi(() => fetchEmailCounts(wsId, icpId), [wsId, icpId, version])
+  // Queue all covers every approved email in this ICP or workspace, whatever the search: just who they're to.
+  const approvedList = useApi(() => fetchEmailBriefs(wsId, { statuses: ["approved"], icpId }), [wsId, icpId, version])
+  // The open email is read on its own, so it stays open whatever happens to it (approved, skipped, back to review).
+  const opened = useApi(() => (openId ? fetchEmail(wsId, openId) : Promise.resolve(null)), [wsId, openId, version])
+  // An email opened from a link: the drawer steps through the list it's on.
+  const linked = useApi(() => (initialEmailId ? fetchEmailIds(wsId, filters) : Promise.resolve(null)), [wsId, initialEmailId])
 
   if (emails.error && !emails.data) return <BackendError message={emails.error} onRetry={emails.reload} />
   if (!emails.data) return <TableSkeleton rows={6} />
 
-  const list = emails.data.filter((d) => !icpId || d.lead.icpId === icpId)
-  const query = search.trim().toLowerCase()
-  const matching = list.filter((d) =>
-    (!extra.icp || extra.icp === "all" || (d.lead.icpId || "none") === extra.icp) &&
-    scoreMatches(d.score, extra.scoreBand) && presenceMatches(d.hook, extra.hookState) && presenceMatches(d.flags.length, extra.flags) &&
-    (!extra.rating || extra.rating === "all" || (d.feedback?.rating || "unrated") === extra.rating) &&
-    recentMatches(d.createdAt, extra.written) && [name(d), d.lead.company, d.lead.title, d.lead.email, d.subject, d.body]
-    .some((value) => value?.toLowerCase().includes(query)))
-  const visible = matching.filter((d) => FILTERS.find((f) => f.value === filter)!.test(d.status))
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(visible.length / pageSize)))
-  const shown = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
-  const navigation = (order.length ? order : list.map((d) => d.id)).filter((id) => list.some((d) => d.id === id))
+  const shown = emails.data.items
+  const total = emails.data.total
+  const byStatus = emails.data.statuses
+  if (!shown.length && total > 0 && page > 1) setPage(Math.max(1, Math.ceil(total / pageSize)))
+  const navigation = order.length ? order : (linked.data ?? shown.map((d) => d.id))
   const currentIndex = navigation.indexOf(openId ?? "")
-  const openEmail = (id: string) => { setOrder(visible.map((d) => d.id)); setOpenId(id) }
-  const open = list.find((d) => d.id === openId) ?? null
-  const approved = list.filter((d) => d.status === "approved")
-  // Tab badges: the open tab counts what matches the search and filters; the others are the backend's totals.
-  const tabCount = (f: (typeof FILTERS)[number]) =>
-    f.value === filter
-      ? visible.length
-      : Object.entries(counts.data ?? {}).reduce((n, [s, c]) => (f.test(s as EmailStatus) ? n + (c ?? 0) : n), 0)
-  const reload = () => {
-    emails.reload()
-    counts.reload()
+  const openEmail = (id: string) => {
+    setOpenId(id)
+    setOrder(shown.map((d) => d.id))
+    // Previous and next step through every match, on every page, in this order.
+    void fetchEmailIds(wsId, filters).then(setOrder).catch(() => {})
   }
-  const risky = approved.filter(isRisky)
+  const fromPage = shown.find((d) => d.id === openId)
+  const open = openId ? (opened.data?.id === openId ? opened.data : (fromPage ?? null)) : null
+  const approved = approvedList.data ?? []
+  // Tab badges: how many in each tab under the same search and filters.
+  const tabCount = (f: (typeof FILTERS)[number]) =>
+    Object.entries(byStatus).reduce((n, [s, c]) => (f.test(s as EmailStatus) ? n + (c ?? 0) : n), 0)
+  const reload = () => setVersion((v) => v + 1)
+  const risky = approved.filter((d) => needsConfirm(d.emailStatus))
   const toQueue = includeRisky ? approved.length : approved.length - risky.length
 
   const queueApproved = async () => {
     setQueueing(true)
-    const ids = approved.filter((d) => includeRisky || !isRisky(d)).map((d) => d.id)
+    const ids = approved.filter((d) => includeRisky || !needsConfirm(d.emailStatus)).map((d) => d.id)
     if (ids.length && (await queue(wsId, ids, includeRisky ? risky.map((d) => d.id) : []))) reload()
     setQueueing(false)
   }
@@ -183,7 +186,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
         onApply={(v) => { setExtra(pickFacets(v, ["icp","scoreBand","hookState","flags","rating","written"])); setSearch(v.search ?? ""); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "review"); setPage(1) }} onRefresh={reload} />
       <Input aria-label="Search review emails" placeholder="Search person, company, address, subject or email text"
         className="max-w-lg" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
-      <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={visible.length} fields={[{key:"icp",label:"ICP",options:[{value:"none",label:"No ICP"},...icps.map((i)=>({value:i.id,label:i.name}))]},{key:"scoreBand",label:"Email score",options:SCORE_OPTIONS},{key:"hookState",label:"Post hook",options:PRESENCE_OPTIONS},{key:"flags",label:"Flags needing attention",options:PRESENCE_OPTIONS},{key:"rating",label:"Feedback rating",options:[{value:"good",label:"Good"},{value:"bad",label:"Needs work"},{value:"unrated",label:"Not rated"}]},{key:"written",label:"Written date",options:RECENT_OPTIONS}]} />
+      <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"icp",label:"ICP",options:[{value:"none",label:"No ICP"},...icps.map((i)=>({value:i.id,label:i.name}))]},{key:"scoreBand",label:"Email score",options:SCORE_OPTIONS},{key:"hookState",label:"Post hook",options:PRESENCE_OPTIONS},{key:"flags",label:"Flags needing attention",options:PRESENCE_OPTIONS},{key:"rating",label:"Feedback rating",options:[{value:"good",label:"Good"},{value:"bad",label:"Needs work"},{value:"unrated",label:"Not rated"}]},{key:"written",label:"Written date",options:RECENT_OPTIONS}]} />
       <div className="flex flex-wrap items-center gap-1.5">
         <div role="tablist" aria-label="Filter drafts" className="flex flex-wrap gap-1.5">
           {FILTERS.map((f) => (
@@ -223,9 +226,9 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
           <div className="space-y-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
             <p>
               {risky.length === 1 ? "1 needs" : `${risky.length} need`} your OK first:{" "}
-              {risky.map((d) => `${name(d)} (${confirmKind(d.lead.emailStatus)})`).join(", ")}.
+              {risky.map((d) => `${d.leadName} (${confirmKind(d.emailStatus)})`).join(", ")}.
             </p>
-            {[...new Set(risky.map((d) => d.lead.emailStatus))].map((s) => (
+            {[...new Set(risky.map((d) => d.emailStatus))].map((s) => (
               <p key={s} className="text-xs">
                 {confirmNote(s)}
               </p>
@@ -238,7 +241,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
         )}
       </ConfirmDialog>
 
-      {visible.length === 0 ? (
+      {total === 0 ? (
         <EmptyState icon={Inbox} title="Nothing here" description="Try another search or filter." />
       ) : (
         <div className="overflow-x-auto rounded-lg border">
@@ -283,7 +286,7 @@ function Drafts({ wsId, icpId, initialEmailId, onClearEmailLink }: {
         </div>
       )}
 
-      {visible.length > 0 && <Pager page={currentPage} pageSize={pageSize} total={visible.length} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1) }} />}
+      {total > 0 && <Pager page={page} pageSize={pageSize} total={total} onPage={setPage} onPageSize={(size) => { setPageSize(size); setPage(1) }} />}
       {open && (
         <DraftSheet
           key={open.id + open.updatedAt}

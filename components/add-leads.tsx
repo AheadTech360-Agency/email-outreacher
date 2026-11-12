@@ -27,7 +27,9 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { downloadTemplate } from "@/lib/api"
+import { downloadTemplate, useApi } from "@/lib/api"
+import { fetchEmailTaken } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
 import { EMAIL_PATTERN, fullName } from "@/lib/format"
 import { useStore } from "@/lib/store"
 
@@ -134,7 +136,7 @@ function Field({
 }
 
 export function AddLeadDialog({ icpId: fixedIcpId, onClose }: { icpId?: string; onClose: () => void }) {
-  const { icps, leads, addLead } = useStore()
+  const { icps, currentWorkspaceId, addLead } = useStore()
   const [icpId, setIcpId] = useState(fixedIcpId ?? (icps.length === 1 ? icps[0].id : ""))
   const [fields, setFields] = useState<Fields>(EMPTY)
   const [extras, setExtras] = useState<{ key: string; value: string }[]>([])
@@ -144,7 +146,13 @@ export function AddLeadDialog({ icpId: fixedIcpId, onClose }: { icpId?: string; 
 
   const icp = icps.find((i) => i.id === icpId)
   const email = fields.email.trim().toLowerCase()
-  const duplicate = !!email && leads.some((l) => l.email.toLowerCase() === email)
+  // Already a lead here? Asked once the address stops changing (the server also refuses a duplicate on save).
+  const typedEmail = useDebounced(email)
+  const taken = useApi(
+    () => (currentWorkspaceId && typedEmail && EMAIL_PATTERN.test(typedEmail) ? fetchEmailTaken(currentWorkspaceId, typedEmail) : Promise.resolve(false)),
+    [currentWorkspaceId, typedEmail],
+  )
+  const duplicate = !!email && typedEmail === email && taken.data === true
   const errors = {
     email:
       !email && !fields.linkedinUrl.trim()

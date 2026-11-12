@@ -10,7 +10,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { type ApiIcp, fetchLeadIntelCompanies, fetchPipeline, findCompanies, useApi } from "@/lib/api"
+import { type ApiIcp, fetchLeadIntelCompanies, findCompanies, useApi } from "@/lib/api"
+import { fetchLeadIntelIdsInPipeline } from "@/lib/lists"
 
 /** Pick which of the companies Lead Intel matched to an ICP go into that ICP's pipeline. Lead Intel is only read. */
 export function LeadIntelImportDialog({
@@ -30,12 +31,13 @@ export function LeadIntelImportDialog({
   const [icpId, setIcpId] = useState(initialIcpId)
   const icp = icps.find((i) => i.id === icpId) ?? icps[0]
   const companies = useApi(() => fetchLeadIntelCompanies(icp.id), [icp.id])
-  const pipeline = useApi(() => fetchPipeline(workspaceId), [workspaceId])
+  // Only which Lead Intel businesses are already in the pipeline: not the whole pipeline.
+  const pipeline = useApi(() => fetchLeadIntelIdsInPipeline(workspaceId), [workspaceId])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [running, setRunning] = useState(false)
 
   const list = companies.data ?? []
-  const inPipeline = new Set((pipeline.data ?? []).flatMap((c) => (c.leadIntelBusinessId ? [c.leadIntelBusinessId] : [])))
+  const inPipeline = new Set(pipeline.data ?? [])
   const open = list.filter((c) => !inPipeline.has(c.id))
   const picked = open.filter((c) => selected.has(c.id))
   const allChecked = open.length > 0 && picked.length === open.length

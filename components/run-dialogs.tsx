@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { fetchLeadPosts, generateEmails } from "@/lib/api"
+import { fetchLeadPosts, generateEmails, useApi } from "@/lib/api"
+import { fetchLeadBriefs } from "@/lib/lists"
 import { COST_PER_POST, FETCHED_SOURCES, postsCeiling, postsSummary } from "@/lib/costs"
 import { SOURCE_LABEL, formatUsd } from "@/lib/format"
 import { resolveTemplate } from "@/lib/selectors"
@@ -45,10 +46,12 @@ export function EnrichDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { leads, settings, currentWorkspaceId, reloadLeads } = useStore()
+  const { settings, currentWorkspaceId, reloadLeads } = useStore()
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState("")
-  const targets = leads.filter((l) => leadIds.includes(l.id))
+  // The picked leads, read when the dialog opens (only those that still exist run, as before).
+  const briefs = useApi(() => (open && currentWorkspaceId ? fetchLeadBriefs(currentWorkspaceId, leadIds) : Promise.resolve([])), [open, currentWorkspaceId, leadIds.join(",")])
+  const targets = briefs.data ?? []
   const { sources, maxPosts, maxAgeDays } = postSettings(icp, settings)
   const ceiling = postsCeiling(targets.length, maxPosts, sources)
 
@@ -116,7 +119,7 @@ export function EnrichDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={running}>
             Cancel
           </Button>
-          <Button disabled={running || sources.length === 0 || targets.length === 0} onClick={() => void run()}>
+          <Button disabled={running || briefs.loading || sources.length === 0 || targets.length === 0} onClick={() => void run()}>
             <Sparkles /> {running ? `Fetching…${progress ? ` ${progress}` : ""}` : "Fetch posts"}
           </Button>
         </DialogFooter>
@@ -137,13 +140,14 @@ export function GenerateDialog({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { templates, leads, settings, currentWorkspaceId, reloadLeads } = useStore()
+  const { templates, settings, currentWorkspaceId, reloadLeads } = useStore()
+  // The picked leads' status and profiles, read when the dialog opens: who needs posts first.
+  const briefs = useApi(() => (open && currentWorkspaceId ? fetchLeadBriefs(currentWorkspaceId, leadIds) : Promise.resolve([])), [open, currentWorkspaceId, leadIds.join(",")])
   const [instruction, setInstruction] = useState("")
   // Emails are written from everything we know: leads whose posts were never fetched get them first.
   const post = postSettings(icp, settings)
-  const needPosts = leads.filter(
+  const needPosts = (briefs.data ?? []).filter(
     (l) =>
-      leadIds.includes(l.id) &&
       (l.status === "imported" || l.status === "failed") &&
       post.sources.some((s) => (s === "linkedin" ? l.linkedinUrl : l.instagramUrl)),
   )
@@ -240,7 +244,7 @@ export function GenerateDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={running}>
             Cancel
           </Button>
-          <Button disabled={running || leadIds.length === 0} onClick={() => void run()}>
+          <Button disabled={running || briefs.loading || leadIds.length === 0} onClick={() => void run()}>
             <Wand2 /> {running ? `Writing…${progress ? ` ${progress}` : ""}` : "Write emails"}
           </Button>
         </DialogFooter>

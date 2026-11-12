@@ -1,15 +1,18 @@
 "use client"
 
 import { FacetFilters } from "@/components/facet-filters"
-import { presenceMatches, recentMatches, scoreMatches, PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
-import { useEffect, useState } from "react"
+import { PRESENCE_OPTIONS, RECENT_OPTIONS, SCORE_OPTIONS } from "@/lib/facets"
+import { useMemo, useState } from "react"
+import { type LeadFilters, fetchLeadsPage, fetchMatchingLeads } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
+import { useApi } from "@/lib/api"
 import { ArrowRightLeft, Search, Sparkles, Trash2, Users, Wand2 } from "lucide-react"
 import { toast } from "sonner"
 import { AddLeadsMenu } from "@/components/add-leads"
 import { BackendError } from "@/components/companies/backend-state"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EmptyState } from "@/components/empty-state"
-import { LeadsTable } from "@/components/leads-table"
+import { LEADS_PAGE_SIZE, LeadsTable } from "@/components/leads-table"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { EnrichDialog, GenerateDialog } from "@/components/run-dialogs"
@@ -26,21 +29,12 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { LEAD_STATUS_LABEL, SOURCE_LABEL, fullName, leadSources } from "@/lib/format"
+import { LEAD_STATUS_LABEL, SOURCE_LABEL } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import { LEAD_STATUSES, SOURCES } from "@/lib/types"
 
-/** An email the source checked: Apollo's "verified" or the LinkedIn search's "valid". */
-const isVerified = (l: { email: string; emailStatus: string | null }) =>
-  !!l.email && ["verified", "valid"].includes((l.emailStatus ?? "").toLowerCase())
-
 export default function LeadsPage() {
-  const { leads: everyone, leadsStatus, leadsError, reloadLeads, icps, moveLeads, deleteLeads } = useStore()
-  // Someone is a lead once their first email is queued for sending; before that they're worked on from People.
-  const leads = everyone.filter((l) => l.queuedAt)
-  const loading = leadsStatus === "loading"
-  // Leads are also made on the People and Companies pages, so fetch a fresh list on every visit.
-  useEffect(() => reloadLeads(), [reloadLeads])
+  const { leadsVersion, currentWorkspaceId, icps, moveLeads, deleteLeads } = useStore()
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState("")
   const [extra, setExtra] = useState<Record<string, string>>({})
@@ -49,36 +43,53 @@ export default function LeadsPage() {
   const [source, setSource] = useState("all")
   const [emailFilter, setEmailFilter] = useState("all")
   const [removingNoEmail, setRemovingNoEmail] = useState(false)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Picked leads and their ICP (posts and emails run for one ICP at a time): kept across pages.
+  const [selected, setSelected] = useState<Map<string, string>>(new Map())
+  const [page, setPage] = useState(0)
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState("")
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [run, setRun] = useState<"posts" | "emails" | null>(null)
 
-  const q = query.trim().toLowerCase()
-  const visible = leads.filter((l) => {
-    const sources = leadSources(l)
-    return (
-      presenceMatches(l.linkedinUrl, extra.linkedin) &&
-      presenceMatches(l.postCount, extra.posts) &&
-      scoreMatches(l.score?.value, extra.score) &&
-      recentMatches(l.queuedAt, extra.queued) &&
-      (icpFilter === "all" || l.icpId === icpFilter) &&
-      (status === "all" || l.status === status) &&
-      (source === "all" ||
-        (source === "none" ? sources.every((s) => s === "website") : sources.includes(source as (typeof SOURCES)[number]))) &&
-      (emailFilter === "all" || (emailFilter === "none" ? !l.email : emailFilter === "verified" ? isVerified(l) : !!l.email)) &&
-      (!q || `${fullName(l)} ${l.email} ${l.company} ${l.title}`.toLowerCase().includes(q))
-    )
-  })
+  // Someone is a lead once their first email is queued for sending (the server lists only them); the server filters
+  // and pages, and typing waits for a pause before it asks.
+  const typedQuery = useDebounced(query)
+  const filters: LeadFilters = useMemo(() => ({
+    icpId: icpFilter === "all" ? undefined : icpFilter, status, source, email: emailFilter, linkedin: extra.linkedin, posts: extra.posts,
+    score: extra.score, queuedWithin: extra.queued, q: typedQuery,
+  }), [icpFilter, status, source, emailFilter, extra.linkedin, extra.posts, extra.score, extra.queued, typedQuery])  // prettier-ignore
+  // Back to the first page whenever the filters change.
+  const [pageOf, setPageOf] = useState(filters)
+  if (pageOf !== filters) {
+    setPageOf(filters)
+    setPage(0)
+  }
+  const result = useApi(
+    () => (currentWorkspaceId ? fetchLeadsPage(currentWorkspaceId, filters, page + 1, LEADS_PAGE_SIZE) : Promise.resolve(null)),
+    [currentWorkspaceId, filters, page, leadsVersion],
+  )
+  const shown = result.data?.items ?? []
+  const total = result.data?.total ?? 0
+  const queuedTotal = result.data?.queuedTotal ?? 0
+  const noEmailCount = result.data?.noEmail ?? 0
+  if (result.data && !shown.length && total > 0 && page > 0) setPage(Math.max(0, Math.ceil(total / LEADS_PAGE_SIZE) - 1))
   const filtered = Object.values(extra).some((v) => v && v !== "all") || query || icpFilter !== "all" || status !== "all" || source !== "all" || emailFilter !== "all"
-  const noEmail = leads.filter((l) => !l.email)
-  const allShownPicked = visible.length > 0 && visible.every((l) => selected.has(l.id))
-  const ids = Array.from(selected)
+  const allShownPicked = total > 0 && selected.size >= total && shown.every((l) => selected.has(l.id))
+  const ids = Array.from(selected.keys())
   // Posts and emails follow an ICP's sources and prompts, so they run for leads of one ICP at a time.
-  const selectedIcpIds = new Set(leads.filter((l) => selected.has(l.id)).map((l) => l.icpId))
+  const selectedIcpIds = new Set(selected.values())
   const runIcp = selectedIcpIds.size === 1 ? icps.find((i) => i.id === [...selectedIcpIds][0]) : undefined
   const runHint = ids.length === 0 ? "Select leads first" : runIcp ? undefined : "Select leads from one ICP"
+
+  const pickAll = async () => {
+    if (!currentWorkspaceId) return
+    try {
+      const all = await fetchMatchingLeads(currentWorkspaceId, filters)
+      setSelected(new Map(all.map((l) => [l.id, l.icpId ?? ""])))
+    } catch (e) {
+      toast.error("Couldn't select them", { description: e instanceof Error ? e.message : undefined })
+    }
+  }
 
   const clear = () => {
     setExtra({})
@@ -93,11 +104,11 @@ export default function LeadsPage() {
     <>
       <PageHeader
         title="Leads"
-        description={`${leads.length} leads across ${icps.length} ICPs`}
+        description={`${queuedTotal} leads across ${icps.length} ICPs`}
         actions={<AddLeadsMenu variant="default" />}
       />
       <div className="space-y-4 px-4 pb-10 md:px-8">
-        <FacetFilters values={extra} onChange={setExtra} count={visible.length} fields={[
+        <FacetFilters values={extra} onChange={setExtra} count={total} fields={[
           {key:"linkedin",label:"LinkedIn profile",options:PRESENCE_OPTIONS},
           {key:"posts",label:"Fetched posts",options:PRESENCE_OPTIONS},
           {key:"score",label:"Lead score",options:SCORE_OPTIONS},
@@ -159,12 +170,12 @@ export default function LeadsPage() {
               <SelectItem value="none">No email</SelectItem>
             </SelectContent>
           </Select>
-          {visible.length > 0 && (
+          {total > 0 && (
             <Button
               variant="ghost"
-              onClick={() => setSelected(allShownPicked ? new Set() : new Set(visible.map((l) => l.id)))}
+              onClick={() => (allShownPicked ? setSelected(new Map()) : void pickAll())}
             >
-              {allShownPicked ? "Clear selection" : `Select all ${visible.length.toLocaleString()}${filtered ? " matching" : ""}`}
+              {allShownPicked ? "Clear selection" : `Select all ${total.toLocaleString()}${filtered ? " matching" : ""}`}
             </Button>
           )}
           <div className="ml-auto flex flex-wrap gap-2">
@@ -184,8 +195,8 @@ export default function LeadsPage() {
             >
               <ArrowRightLeft /> Move{ids.length ? ` (${ids.length})` : ""}
             </Button></ManagerOnly>
-            <ManagerOnly><Button variant="outline" disabled={noEmail.length === 0} onClick={() => setRemovingNoEmail(true)}>
-              <Trash2 /> Remove {noEmail.length.toLocaleString()} without email
+            <ManagerOnly><Button variant="outline" disabled={noEmailCount === 0} onClick={() => setRemovingNoEmail(true)}>
+              <Trash2 /> Remove {noEmailCount.toLocaleString()} without email
             </Button></ManagerOnly>
             <ManagerOnly><Button variant="destructive" disabled={ids.length === 0} onClick={() => setDeleteOpen(true)}>
               <Trash2 /> Delete{ids.length ? ` (${ids.length})` : ""}
@@ -193,18 +204,18 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {leadsStatus === "error" ? (
-          <BackendError message={leadsError ?? ""} onRetry={reloadLeads} />
-        ) : loading ? (
+        {result.error && !result.data ? (
+          <BackendError message={result.error} onRetry={result.reload} />
+        ) : !result.data ? (
           <TableSkeleton />
-        ) : leads.length === 0 ? (
+        ) : queuedTotal === 0 ? (
           <EmptyState
             icon={Users}
             title="No leads yet"
             description="Someone becomes a lead once their first email is queued for sending. Find people, write their emails on the People page, approve them in Review, then queue them."
             action={<AddLeadsMenu variant="default" />}
           />
-        ) : visible.length === 0 ? (
+        ) : total === 0 ? (
           <EmptyState
             icon={Search}
             title="No leads match these filters"
@@ -217,7 +228,8 @@ export default function LeadsPage() {
             }
           />
         ) : (
-          <LeadsTable leads={visible} selected={selected} onSelectedChange={setSelected} showIcp />
+          <LeadsTable leads={shown} total={total} page={page} onPage={setPage} selected={new Set(selected.keys())} showIcp
+            onPick={(rows, on) => setSelected((s) => { const next = new Map(s); for (const l of rows) { if (on) next.set(l.id, l.icpId); else next.delete(l.id) } return next })} />
         )}
       </div>
 
@@ -262,7 +274,7 @@ export default function LeadsPage() {
                 try {
                   await moveLeads(ids, moveTarget)
                   setMoveOpen(false)
-                  setSelected(new Set())
+                  setSelected(new Map())
                   toast.success(`Moved ${ids.length} lead${ids.length === 1 ? "" : "s"} to ${icps.find((i) => i.id === moveTarget)?.name}`)
                 } catch (e) {
                   toast.error("Couldn't move them", { description: e instanceof Error ? e.message : undefined })
@@ -281,14 +293,15 @@ export default function LeadsPage() {
         open={removingNoEmail}
         onOpenChange={setRemovingNoEmail}
         destructive
-        title={`Remove ${noEmail.length.toLocaleString()} lead${noEmail.length === 1 ? "" : "s"} without an email?`}
+        title={`Remove ${noEmailCount.toLocaleString()} lead${noEmailCount === 1 ? "" : "s"} without an email?`}
         description="Every lead with no email address, in every ICP. Their posts, hooks and drafts are deleted too; the people they came from stay on the People page, so you can reveal an email and add them again. This can't be undone."
-        confirmLabel={`Remove ${noEmail.length.toLocaleString()}`}
+        confirmLabel={`Remove ${noEmailCount.toLocaleString()}`}
         onConfirm={async () => {
-          const gone = noEmail.map((l) => l.id)
           try {
+            // Every lead in sequence with no email, in every ICP, whatever the filters (as the button says).
+            const gone = currentWorkspaceId ? (await fetchMatchingLeads(currentWorkspaceId, { email: "none" })).map((l) => l.id) : []
             for (let i = 0; i < gone.length; i += 1000) await deleteLeads(gone.slice(i, i + 1000))
-            setSelected((s) => new Set([...s].filter((id) => !gone.includes(id))))
+            setSelected((s) => new Map([...s].filter(([id]) => !gone.includes(id))))
             toast.success(`Removed ${gone.length.toLocaleString()} lead${gone.length === 1 ? "" : "s"} without an email`)
           } catch (e) {
             toast.error("Couldn't remove them", { description: e instanceof Error ? e.message : undefined })
@@ -305,7 +318,7 @@ export default function LeadsPage() {
         onConfirm={async () => {
           try {
             await deleteLeads(ids)
-            setSelected(new Set())
+            setSelected(new Map())
             toast.success(`Deleted ${ids.length} lead${ids.length === 1 ? "" : "s"}`)
           } catch (e) {
             toast.error("Couldn't delete them", { description: e instanceof Error ? e.message : undefined })

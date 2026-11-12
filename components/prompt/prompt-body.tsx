@@ -1,6 +1,7 @@
 "use client"
 
 import { fetchProducts, useApi } from "@/lib/api"
+import { fetchLeadExtraKeys } from "@/lib/lists"
 import { useRef, type Dispatch, type SetStateAction } from "react"
 import { AlertTriangle } from "lucide-react"
 import { HighlightedEditor } from "@/components/prompt/highlighted-editor"
@@ -41,7 +42,9 @@ export function PromptBody({
   setDraft: Dispatch<SetStateAction<VersionDraft>>
   userError?: string
 }) {
-  const { leads, currentWorkspaceId } = useStore()
+  const { leadsVersion, currentWorkspaceId } = useStore()
+  // The columns found in the leads' extra fields, from the server (not every lead loaded to look).
+  const extraKeys = useApi(() => (currentWorkspaceId ? fetchLeadExtraKeys(currentWorkspaceId) : Promise.resolve([])), [currentWorkspaceId, leadsVersion])
   const products = useApi(() => currentWorkspaceId && kind !== "analysis" && kind !== "sort" && kind !== "sort_people" ? fetchProducts(currentWorkspaceId) : Promise.resolve([]), [currentWorkspaceId, kind])
   const customVariables = [...new Set((products.data ?? []).filter((p)=>!p.archived).flatMap((p)=>(p.customFields ?? []).map((f)=>`product.custom.${f.key}`)))].sort()
   const systemRef = useRef<HTMLTextAreaElement>(null)
@@ -51,7 +54,7 @@ export function PromptBody({
   // Only hook and email prompts are given posts.
   const usesPosts = kind === "hook" || kind === "email"
   const unknown = unknownVariables(`${draft.systemPrompt}\n${draft.userPrompt}`, kind)
-  const extraColumns = Array.from(new Set(leads.flatMap((l) => Object.keys(l.extra)))).sort()
+  const extraColumns = extraKeys.data ?? []
   const variables = availableVariables(kind).flatMap((v) =>
     v === "lead.extra.<column>" ? extraColumns.map((c) => `lead.extra.${c}`) : v === "product.custom.<field>" ? customVariables : [v],
   )

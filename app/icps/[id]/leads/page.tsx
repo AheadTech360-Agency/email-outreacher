@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { Search, Sparkles, Users, Wand2 } from "lucide-react"
+import { toast } from "sonner"
 import { AddLeadsMenu } from "@/components/add-leads"
+import { BackendError } from "@/components/companies/backend-state"
 import { EmptyState } from "@/components/empty-state"
-import { LeadsTable } from "@/components/leads-table"
+import { LEADS_PAGE_SIZE, LeadsTable } from "@/components/leads-table"
 import { ManagerOnly } from "@/components/manager-only"
 import { EnrichDialog, GenerateDialog } from "@/components/run-dialogs"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -12,38 +14,68 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useIcpParam } from "@/hooks/use-icp"
-import { LEAD_STATUS_LABEL, fullName } from "@/lib/format"
-import { ENRICHABLE, GENERATABLE } from "@/lib/selectors"
+import { useApi } from "@/lib/api"
+import { LEAD_STATUS_LABEL } from "@/lib/format"
+import { type LeadFilters, fetchLeadsPage, fetchMatchingLeads } from "@/lib/lists"
+import { ENRICHABLE, GENERATABLE, leadCount } from "@/lib/selectors"
 import { useStore } from "@/lib/store"
-import { LEAD_STATUSES } from "@/lib/types"
+import { LEAD_STATUSES, type LeadStatus } from "@/lib/types"
+import { useDebounced } from "@/lib/use-debounced"
+
+const READY: LeadStatus[] = ["enriched", "no_content"]
 
 export default function IcpLeadsPage() {
   const icp = useIcpParam()
-  const { leads, leadsStatus, reloadLeads } = useStore()
-  // Leads are also made on the People and Companies pages, so fetch a fresh list on every visit.
-  useEffect(() => reloadLeads(), [reloadLeads])
-  const loading = leadsStatus === "loading"
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const { leadsVersion, currentWorkspaceId } = useStore()
+  // Picked leads and their status (which can be written): kept across pages.
+  const [selected, setSelected] = useState<Map<string, LeadStatus>>(new Map())
   const [query, setQuery] = useState("")
   const [status, setStatus] = useState("all")
+  const [page, setPage] = useState(0)
   const [enrichIds, setEnrichIds] = useState<string[] | null>(null)
   const [generateIds, setGenerateIds] = useState<string[] | null>(null)
+  const [finding, setFinding] = useState(false)
+  // This ICP's leads (someone is a lead once their email is queued), filtered and paged by the server. The search
+  // covers name, email and company, as it always did here.
+  const typedQuery = useDebounced(query)
+  const filters: LeadFilters = useMemo(
+    () => ({ icpId: icp?.id, status, q: typedQuery, qTitle: "false" }),
+    [icp?.id, status, typedQuery],
+  )
+  const [pageOf, setPageOf] = useState(filters)
+  if (pageOf !== filters) {
+    setPageOf(filters)
+    setPage(0)
+  }
+  const result = useApi(
+    () => (currentWorkspaceId && icp ? fetchLeadsPage(currentWorkspaceId, filters, page + 1, LEADS_PAGE_SIZE, icp.id) : Promise.resolve(null)),
+    [currentWorkspaceId, icp?.id, filters, page, leadsVersion],
+  )
   if (!icp) return null
 
-  const icpLeads = leads.filter((l) => l.icpId === icp.id && l.queuedAt)  // a lead once their email is queued
-  const q = query.trim().toLowerCase()
-  const visible = icpLeads.filter(
-    (l) =>
-      (status === "all" || l.status === status) &&
-      (!q || `${fullName(l)} ${l.email} ${l.company}`.toLowerCase().includes(q)),
-  )
-  const selectedLeads = icpLeads.filter((l) => selected.has(l.id))
+  const shown = result.data?.items ?? []
+  const total = result.data?.total ?? 0
+  const statuses = result.data?.statuses ?? {}
+  if (result.data && !shown.length && total > 0 && page > 0) setPage(Math.max(0, Math.ceil(total / LEADS_PAGE_SIZE) - 1))
 
-  const enrichAll = icpLeads.filter((l) => ENRICHABLE.includes(l.status)).map((l) => l.id)
-  const enrichSelected = selectedLeads.map((l) => l.id)
-  const generateTargets = (selected.size ? selectedLeads : icpLeads.filter((l) => l.status === "enriched" || l.status === "no_content"))
-    .filter((l) => GENERATABLE.includes(l.status))
-    .map((l) => l.id)
+  const enrichSelected = [...selected.keys()]
+  const enrichAllCount = leadCount(statuses, ENRICHABLE)
+  const writable = [...selected].filter(([, s]) => GENERATABLE.includes(s)).map(([id]) => id)
+  const generateCount = selected.size ? writable.length : leadCount(statuses, READY.filter((s) => GENERATABLE.includes(s)))
+
+  // The "all" buttons read every matching lead's id and status only when pressed.
+  const every = async (keep: LeadStatus[], then: (ids: string[]) => void) => {
+    if (!currentWorkspaceId) return
+    setFinding(true)
+    try {
+      const all = await fetchMatchingLeads(currentWorkspaceId, { icpId: icp.id })
+      then(all.filter((l) => keep.includes(l.status)).map((l) => l.id))
+    } catch (e) {
+      toast.error("Couldn't read the leads", { description: e instanceof Error ? e.message : undefined })
+    } finally {
+      setFinding(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -76,25 +108,28 @@ export default function IcpLeadsPage() {
           <ManagerOnly><Button variant="outline" disabled={enrichSelected.length === 0} onClick={() => setEnrichIds(enrichSelected)}>
             <Sparkles /> Fetch posts{enrichSelected.length ? ` (${enrichSelected.length})` : ""}
           </Button></ManagerOnly>
-          <ManagerOnly><Button variant="outline" disabled={enrichAll.length === 0} onClick={() => setEnrichIds(enrichAll)}>
-            Fetch posts for all new ({enrichAll.length})
+          <ManagerOnly><Button variant="outline" disabled={enrichAllCount === 0 || finding} onClick={() => void every(ENRICHABLE, setEnrichIds)}>
+            Fetch posts for all new ({enrichAllCount})
           </Button></ManagerOnly>
-          <ManagerOnly><Button disabled={generateTargets.length === 0} onClick={() => setGenerateIds(generateTargets)}>
-            <Wand2 /> Write emails ({generateTargets.length})
+          <ManagerOnly><Button disabled={generateCount === 0 || finding}
+            onClick={() => (selected.size ? setGenerateIds(writable) : void every(READY.filter((s) => GENERATABLE.includes(s)), setGenerateIds))}>
+            <Wand2 /> Write emails ({generateCount})
           </Button></ManagerOnly>
         </div>
       </div>
 
-      {loading ? (
+      {result.error && !result.data ? (
+        <BackendError message={result.error} onRetry={result.reload} />
+      ) : !result.data ? (
         <TableSkeleton />
-      ) : icpLeads.length === 0 ? (
+      ) : result.data.queuedTotal === 0 ? (
         <EmptyState
           icon={Users}
           title="No leads in this ICP"
           description="Someone becomes a lead once their first email is queued for sending, from Review."
           action={<AddLeadsMenu icpId={icp.id} variant="default" />}
         />
-      ) : visible.length === 0 ? (
+      ) : total === 0 ? (
         <EmptyState
           icon={Search}
           title="No leads match these filters"
@@ -111,7 +146,8 @@ export default function IcpLeadsPage() {
           }
         />
       ) : (
-        <LeadsTable leads={visible} selected={selected} onSelectedChange={setSelected} />
+        <LeadsTable leads={shown} total={total} page={page} onPage={setPage} selected={new Set(selected.keys())}
+          onPick={(rows, on) => setSelected((s) => { const next = new Map(s); for (const l of rows) { if (on) next.set(l.id, l.status); else next.delete(l.id) } return next })} />
       )}
 
       {enrichIds && (

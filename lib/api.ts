@@ -74,7 +74,12 @@ interface Page<T> {
   total: number
 }
 
-/** Every page of a list endpoint. Stops at `cap` so a runaway list can't hang the page. */
+interface Page<T> {
+  items: T[]
+  total: number
+}
+
+/** Every page of a list endpoint (Lead Intel's companies for one ICP, in the import dialog). Stops at `cap` so a runaway list can't hang the page. */
 export async function apiAll<T>(path: string, workspaceId?: string | null, cap = 2000): Promise<T[]> {
   const out: T[] = []
   const sep = path.includes("?") ? "&" : "?"
@@ -599,13 +604,8 @@ export interface StakeholderRevealResult {
   error: string | null
 }
 
-export const fetchStakeholders = (workspaceId: string, companyId?: string) =>
-  api<Stakeholder[]>(companyId ? `/stakeholders?companyId=${companyId}` : "/stakeholders", { workspaceId })
-
 export const revealStakeholders = (workspaceId: string, stakeholderIds: string[]) =>
   runJob<StakeholderRevealResult>("/stakeholders/reveal", { workspaceId, body: { stakeholderIds } })
-
-export const fetchAllStakeholders = (workspaceId: string) => api<Stakeholder[]>("/stakeholders", { workspaceId })
 
 export interface PromptTestResult {
   name: string
@@ -783,9 +783,6 @@ export interface SourceFindResult {
   costUsd?: number | null
   notes?: string[]
 }
-
-export const fetchPipeline = (workspaceId: string, icpId?: string) =>
-  api<PipelineCompany[]>(icpId ? `/pipeline/companies?icpId=${icpId}` : "/pipeline/companies", { workspaceId })
 
 export const findCompanies = (
   workspaceId: string,
@@ -1077,14 +1074,6 @@ export const fetchEmails = (workspaceId: string, q: EmailQuery = {}) => {
   return api<EmailDraft[]>(p ? `/emails?${p}` : "/emails", { workspaceId })
 }
 
-/** One page of first emails, newest first, with how many match in all. */
-export const fetchEmailPage = (workspaceId: string, q: EmailQuery, limit: number, offset: number) => {
-  const p = emailParams(q)
-  p.set("limit", String(limit))
-  p.set("offset", String(offset))
-  return api<{ items: EmailDraft[]; total: number; limit: number; offset: number }>(`/emails/page?${p}`, { workspaceId })
-}
-
 /** How many first emails are in each status, without reading them. */
 export const fetchEmailCounts = (workspaceId: string, icpId?: string) =>
   api<Partial<Record<EmailStatus, number>>>(icpId ? `/emails/counts?icpId=${icpId}` : "/emails/counts", { workspaceId })
@@ -1299,7 +1288,7 @@ export const saveEmailAsExample = (workspaceId: string, emailId: string, note = 
 
 // ---------- Leads ----------
 
-interface ApiLead {
+export interface ApiLead {
   id: string
   icpId: string | null
   firstName: string
@@ -1321,7 +1310,7 @@ interface ApiLead {
   queuedAt: string | null
 }
 
-function toLead(l: ApiLead): Lead {
+export function toLead(l: ApiLead): Lead {
   return {
     id: l.id,
     icpId: l.icpId ?? "",
@@ -1343,8 +1332,6 @@ function toLead(l: ApiLead): Lead {
     queuedAt: l.queuedAt,
   }
 }
-
-export const fetchLeads = async (workspaceId: string) => (await apiAll<ApiLead>("/leads", workspaceId)).map(toLead)
 
 export interface LeadInput {
   icpId: string

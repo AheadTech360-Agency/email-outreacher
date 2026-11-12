@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { FlaskConical, Loader2, Search, X } from "lucide-react"
 import { toast } from "sonner"
 import { ManagerOnly } from "@/components/manager-only"
@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { type PromptTestResult, type Stakeholder, fetchAllStakeholders, testPrompt, useApi } from "@/lib/api"
+import { type PromptTestResult, type Stakeholder, testPrompt, useApi } from "@/lib/api"
+import { fetchPeoplePage } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
 import { formatUsd } from "@/lib/format"
 import type { VersionDraft } from "@/lib/store"
 import type { PromptKind } from "@/lib/types"
@@ -29,21 +31,16 @@ const name = (p: Stakeholder) => `${p.firstName} ${p.lastName}`.trim() || p.emai
  * with the current prompts.
  */
 export function TestPrompt({ wsId, kind, draft }: { wsId: string; kind: PromptKind; draft: VersionDraft }) {
-  const people = useApi(() => fetchAllStakeholders(wsId), [wsId])
   const [search, setSearch] = useState("")
+  // The first 8 people with an email who match the search, found by the server (not everyone loaded to search here).
+  const typed = useDebounced(search)
+  const people = useApi(() => fetchPeoplePage(wsId, { archive: "all", email: "has", q: typed }, 1, 8), [wsId, typed])
   const [picked, setPicked] = useState<Stakeholder | null>(null)
   const [running, setRunning] = useState(false)
   const [result, setResult] = useState<PromptTestResult | null>(null)
   const step = kind === "email" ? 1 : Number(kind.replace("followup", ""))
 
-  const matches = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    const writable = (people.data ?? []).filter((p) => p.email)
-    const hits = q
-      ? writable.filter((p) => [name(p), p.title, p.organizationName, p.email].some((v) => v?.toLowerCase().includes(q)))
-      : writable
-    return hits.slice(0, 8)
-  }, [people.data, search])
+  const matches: Stakeholder[] = people.data?.items ?? []
 
   const run = async () => {
     if (!picked) return

@@ -54,6 +54,18 @@ export function pipeline(leads: Lead[]): Record<PipelineStage, number> {
   return counts
 }
 
+/** Leads per status (from the backend's summary), as pipeline stages. */
+export function pipelineOf(statuses: Partial<Record<LeadStatus, number>>): Record<PipelineStage, number> {
+  const counts: Record<PipelineStage, number> = { approved: 0, review: 0, ready: 0, pending: 0, dropped: 0 }
+  for (const [status, n] of Object.entries(statuses)) if (STAGE_OF[status as LeadStatus]) counts[STAGE_OF[status as LeadStatus]] += n ?? 0
+  return counts
+}
+
+/** How many leads, from per-status counts; with `only`, just those statuses. */
+export function leadCount(statuses: Partial<Record<LeadStatus, number>>, only?: LeadStatus[]): number {
+  return Object.entries(statuses).reduce((sum, [s, n]) => (only && !only.includes(s as LeadStatus) ? sum : sum + (n ?? 0)), 0)
+}
+
 /** The scoring template in use (Settings), falling back to the default scoring template. */
 export function resolveScoringTemplate(templates: PromptTemplate[], scoring: { promptId: string | null }) {
   return templates.find((t) => t.id === scoring.promptId && t.kind === "score") ?? templates.find((t) => t.kind === "score" && t.isDefault)

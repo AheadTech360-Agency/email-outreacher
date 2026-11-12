@@ -4,7 +4,7 @@ import { FacetFilters, type FacetField } from "@/components/facet-filters"
 import { presenceMatches, textMatches, PRESENCE_OPTIONS } from "@/lib/facets"
 
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { ChevronLeft, ChevronRight, Download, ListTree, Plus, Search, Sparkles, Trash2 } from "lucide-react"
 import { toast } from "sonner"
 import { WorkspaceGate } from "@/components/companies/backend-state"
@@ -23,10 +23,12 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchAllStakeholders, fetchIcps, fetchPipeline, fetchSmartList, fetchSmartListFacts, fetchSmartListMemberships, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
+  createSmartList, deleteSmartList, downloadCsv, draftSmartListIcp, fetchIcps, fetchSmartList, fetchSmartLists, moveToSmartList, renameSmartList, sortSmartLists,
   useApi, type MemberFacet, type SmartList, type SmartListKind,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
+import { type CandidateFilters, fetchCandidateIds, fetchCandidates } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
 import { formatUsd } from "@/lib/format"
 import { canManage } from "@/lib/roles"
 import { cn } from "@/lib/utils"
@@ -661,7 +663,6 @@ const memberFacetFields = (kind: SmartListKind): (FacetField & { key: MemberFace
   { key: "emails", label: kind === "company" ? "People with emails" : "Email", options: PRESENCE_OPTIONS },
 ]
 
-type Candidate = { id: string; name: string; detail: string; icpId: string | null }
 
 /** Add companies or people to a list. Each row says which list it's in now; those already in this list aren't
  * offered. The box at the top selects only the rows on screen; "Select all" takes every match. */
@@ -683,26 +684,6 @@ function AddMembersDialog({
   onAdded: () => void
 }) {
   const noun = kind === "company" ? { one: "company", many: "companies" } : { one: "person", many: "people" }
-  const candidates = useApi<Candidate[]>(
-    async () =>
-      kind === "company"
-        ? (await fetchPipeline(wsId)).map((c) => ({
-            id: c.id,
-            name: c.name,
-            detail: [c.domain, [c.city, c.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
-            icpId: c.icpId,
-          }))
-        : (await fetchAllStakeholders(wsId)).map((p) => ({
-            id: p.id,
-            name: `${p.firstName} ${p.lastName}`.trim() || p.email || "Unnamed",
-            detail: [p.title, p.organizationName, p.email].filter(Boolean).join(" · "),
-            icpId: p.icpId,
-          })),
-    [wsId, kind],
-  )
-  const membership = useApi(() => fetchSmartListMemberships(wsId, kind), [wsId, kind])
-  const facts = useApi(() => fetchSmartListFacts(wsId, kind), [wsId, kind])
-  const factSets = new Map(Object.entries(facts.data ?? {}).map(([key, ids]) => [key, new Set(ids)]))
   const [facets, setFacets] = useState<Record<string, string>>({})
   const facetsOn = Object.entries(facets).filter(([, v]) => v === "yes" || v === "no")
   const icps = useApi(() => fetchIcps(wsId), [wsId])
@@ -712,35 +693,43 @@ function AddMembersDialog({
   const [from, setFrom] = useState("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
-  const [picked, setPicked] = useState<Set<string>>(new Set())
+  // Picked ids, each with the list they're in now (to say how many will move).
+  const [picked, setPicked] = useState<Map<string, string | null>>(new Map())
   const [busy, setBusy] = useState(false)
 
-  const inList = (id: string) => membership.data?.[id] ?? null
-  const query = search.trim().toLowerCase()
-  const matches = (candidates.data ?? []).filter((c) => {
-    const current = inList(c.id)
-    if (current === listId) return false
-    if (icpFilter !== "all" && (icpFilter === "none" ? c.icpId : c.icpId !== icpFilter)) return false
-    if (from !== "all" && (from === "none" ? current : current !== from)) return false
-    if (facetsOn.some(([key, v]) => (factSets.get(key)?.has(c.id) ?? false) !== (v === "yes"))) return false
-    return !query || c.name.toLowerCase().includes(query) || c.detail.toLowerCase().includes(query)
-  })
-  const visible = matches.slice((page - 1) * pageSize, page * pageSize)
+  // The server filters and pages the candidates; typing waits for a pause before it asks.
+  const typed = useDebounced(search)
+  const query = typed.trim().toLowerCase()
+  const filters: CandidateFilters = useMemo(() => ({
+    kind, listId, icp: icpFilter, from, q: typed, processed: facets.processed, contacted: facets.contacted, verified: facets.verified,
+    emails: facets.emails,
+  }), [kind, listId, icpFilter, from, typed, facets.processed, facets.contacted, facets.verified, facets.emails])  // prettier-ignore
+  const candidates = useApi(() => fetchCandidates(wsId, filters, page, pageSize), [wsId, filters, page, pageSize])
+  const total = candidates.data?.total ?? 0
+  const visible = candidates.data?.items ?? []
+  const inList = (id: string) => visible.find((c) => c.id === id)?.listId ?? null
   const pageState = visible.length && visible.every((c) => picked.has(c.id)) ? true : visible.some((c) => picked.has(c.id)) ? "indeterminate" : false
-  const allPicked = matches.length > 0 && matches.every((c) => picked.has(c.id))
-  const moving = [...picked].filter((id) => inList(id)).length
-  const loading = !candidates.data || !membership.data || !facts.data
-  const error = candidates.error ?? membership.error ?? facts.error
+  const allPicked = total > 0 && picked.size >= total && visible.every((c) => picked.has(c.id))
+  const moving = [...picked.values()].filter(Boolean).length
+  const loading = !candidates.data
+  const error = candidates.error
 
-  const toggle = (ids: string[], on: boolean) =>
+  const toggle = (rows: { id: string; listId: string | null }[], on: boolean) =>
     setPicked((current) => {
-      const next = new Set(current)
-      for (const id of ids) {
-        if (on) next.add(id)
-        else next.delete(id)
+      const next = new Map(current)
+      for (const row of rows) {
+        if (on) next.set(row.id, row.listId)
+        else next.delete(row.id)
       }
       return next
     })
+  const pickAll = async () => {
+    try {
+      toggle(await fetchCandidateIds(wsId, filters), true)
+    } catch (e) {
+      toast.error(`Couldn't select them all`, { description: errorText(e) })
+    }
+  }
   const filter = (set: (v: string) => void) => (v: string) => {
     set(v)
     setPage(1)
@@ -750,7 +739,7 @@ function AddMembersDialog({
     if (busy || !picked.size) return
     setBusy(true)
     try {
-      const r = await moveToSmartList(wsId, kind, [...picked], { listId })
+      const r = await moveToSmartList(wsId, kind, [...picked.keys()], { listId })
       toast.success(`Added ${r.moved.toLocaleString()} ${r.moved === 1 ? noun.one : noun.many} to ${listName}`)
       onAdded()
     } catch (e) {
@@ -813,7 +802,7 @@ function AddMembersDialog({
           </Select>
         </div>
         <div className="-mt-2 flex flex-wrap items-center gap-2">
-          <FacetFilters label="Filters" values={facets} onChange={(v) => (setFacets(v), setPage(1))} count={matches.length}
+          <FacetFilters label="Filters" values={facets} onChange={(v) => (setFacets(v), setPage(1))} count={total}
             fields={memberFacetFields(kind)} />
         </div>
 
@@ -823,19 +812,19 @@ function AddMembersDialog({
               aria-label={`Select the ${visible.length} on this page`}
               disabled={busy || loading || !visible.length}
               checked={pageState}
-              onCheckedChange={(v) => toggle(visible.map((c) => c.id), v === true)}
+              onCheckedChange={(v) => toggle(visible, v === true)}
             />
             <span className="tabular-nums">
-              {picked.size ? `${picked.size.toLocaleString()} selected` : `${matches.length.toLocaleString()} ${matches.length === 1 ? noun.one : noun.many}`}
+              {picked.size ? `${picked.size.toLocaleString()} selected` : `${total.toLocaleString()} ${total === 1 ? noun.one : noun.many}`}
             </span>
             <span className="ml-auto flex items-center gap-1">
-              {matches.length > visible.length && !allPicked && (
-                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => toggle(matches.map((c) => c.id), true)}>
-                  Select all {matches.length.toLocaleString()}
+              {total > visible.length && !allPicked && (
+                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => void pickAll()}>
+                  Select all {total.toLocaleString()}
                 </Button>
               )}
               {picked.size > 0 && (
-                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => setPicked(new Set())}>
+                <Button variant="ghost" size="sm" className="h-7" disabled={busy} onClick={() => setPicked(new Map())}>
                   Clear
                 </Button>
               )}
@@ -844,13 +833,13 @@ function AddMembersDialog({
           {error ? (
             <div role="alert" className="space-y-2 p-4 text-sm">
               <p>{error}</p>
-              <Button variant="outline" size="sm" onClick={() => (candidates.reload(), membership.reload(), facts.reload())}>
+              <Button variant="outline" size="sm" onClick={() => candidates.reload()}>
                 Try again
               </Button>
             </div>
           ) : loading ? (
             <p className="p-4 text-sm text-muted-foreground">Loading {noun.many}…</p>
-          ) : !matches.length ? (
+          ) : !total ? (
             <p className="p-4 text-sm text-muted-foreground">
               {query || icpFilter !== "all" || from !== "all" || facetsOn.length ? `No ${noun.many} match.` : `Every ${noun.one} is already in ${listName}.`}
             </p>
@@ -861,7 +850,7 @@ function AddMembersDialog({
                 return (
                   <li key={c.id}>
                     <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm hover:bg-muted/50">
-                      <Checkbox checked={picked.has(c.id)} disabled={busy} onCheckedChange={(v) => toggle([c.id], v === true)} />
+                      <Checkbox checked={picked.has(c.id)} disabled={busy} onCheckedChange={(v) => toggle([c], v === true)} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium">{c.name}</span>
                         {c.detail && <span className="block truncate text-xs text-muted-foreground">{c.detail}</span>}
@@ -880,7 +869,7 @@ function AddMembersDialog({
         <Pager
           page={page}
           pageSize={pageSize}
-          total={matches.length}
+          total={total}
           onPage={setPage}
           onPageSize={(size) => {
             setPageSize(size)

@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { SourceIcons } from "@/components/source-icon"
 import { LeadStatusBadge, ScoreBadge } from "@/components/status"
@@ -11,43 +10,35 @@ import { fullName, leadSources, shortDate } from "@/lib/format"
 import { useStore } from "@/lib/store"
 import type { Lead } from "@/lib/types"
 
-const PAGE_SIZE = 20
+export const LEADS_PAGE_SIZE = 20
 
+/** One page of leads (the server pages them): `page` counts from 0; picks are reported with the rows picked. */
 export function LeadsTable({
   leads,
+  total,
+  page,
+  onPage,
   selected,
-  onSelectedChange,
+  onPick,
   showIcp,
 }: {
   leads: Lead[]
+  total: number
+  page: number
+  onPage: (page: number) => void
   selected: Set<string>
-  onSelectedChange: (next: Set<string>) => void
+  onPick: (rows: Lead[], on: boolean) => void
   showIcp?: boolean
 }) {
   const { icps, settings } = useStore()
-  const [page, setPage] = useState(0)
-  const pageCount = Math.max(1, Math.ceil(leads.length / PAGE_SIZE))
-  const current = Math.min(page, pageCount - 1)
-  const rows = leads.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE)
+  const pageCount = Math.max(1, Math.ceil(total / LEADS_PAGE_SIZE))
+  const current = page
+  const rows = leads
 
   const allOnPage = rows.length > 0 && rows.every((l) => selected.has(l.id))
   const someOnPage = rows.some((l) => selected.has(l.id))
 
-  const toggle = (id: string, on: boolean) => {
-    const next = new Set(selected)
-    if (on) next.add(id)
-    else next.delete(id)
-    onSelectedChange(next)
-  }
-
-  const togglePage = (on: boolean) => {
-    const next = new Set(selected)
-    for (const l of rows) {
-      if (on) next.add(l.id)
-      else next.delete(l.id)
-    }
-    onSelectedChange(next)
-  }
+  const togglePage = (on: boolean) => onPick(rows, on)
 
   return (
     <div className="space-y-2">
@@ -80,7 +71,7 @@ export function LeadsTable({
                   <Checkbox
                     aria-label={`Select ${fullName(lead)}`}
                     checked={selected.has(lead.id)}
-                    onCheckedChange={(v) => toggle(lead.id, v === true)}
+                    onCheckedChange={(v) => onPick([lead], v === true)}
                   />
                 </TableCell>
                 <TableCell>
@@ -113,14 +104,14 @@ export function LeadsTable({
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         <span>
           {selected.size > 0 && `${selected.size} selected · `}
-          {leads.length} lead{leads.length === 1 ? "" : "s"}
+          {total} lead{total === 1 ? "" : "s"}
         </span>
         {pageCount > 1 && (
           <div className="flex items-center gap-2">
             <span className="tabular-nums">
               Page {current + 1} of {pageCount}
             </span>
-            <Button variant="outline" size="icon-sm" aria-label="Previous page" disabled={current === 0} onClick={() => setPage(current - 1)}>
+            <Button variant="outline" size="icon-sm" aria-label="Previous page" disabled={current === 0} onClick={() => onPage(current - 1)}>
               <ChevronLeft />
             </Button>
             <Button
@@ -128,7 +119,7 @@ export function LeadsTable({
               size="icon-sm"
               aria-label="Next page"
               disabled={current >= pageCount - 1}
-              onClick={() => setPage(current + 1)}
+              onClick={() => onPage(current + 1)}
             >
               <ChevronRight />
             </Button>

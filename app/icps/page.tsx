@@ -17,13 +17,16 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { fetchEmails, useApi } from "@/lib/api"
 import { flagLabel } from "@/lib/format"
-import { pipeline } from "@/lib/selectors"
+import { leadCount, pipelineOf } from "@/lib/selectors"
+import { useLeadSummary } from "@/lib/lists"
 import { useStore } from "@/lib/store"
 
 const LOW_CONFIDENCE = 60
 
 export default function IcpsPage() {
-  const { icps, icpsStatus, icpsError, reloadIcps, workspacesStatus, leads, settings, currentWorkspaceId } = useStore()
+  const { icps, icpsStatus, icpsError, reloadIcps, workspacesStatus, leadsVersion, settings, currentWorkspaceId } = useStore()
+  // Each ICP's leads per status, counted by the server (every lead, queued or not, as before).
+  const summary = useLeadSummary(currentWorkspaceId, leadsVersion)
   const loading = icpsStatus === "loading" || workspacesStatus === "loading"
   // Only drafts waiting for review: sent and skipped emails never show here.
   const emails = useApi(
@@ -34,10 +37,10 @@ export default function IcpsPage() {
   const [archiveFilter, setArchiveFilter] = useState("active")
   const [extra, setExtra] = useState<Record<string,string>>({})
   const rows = icps.filter((icp) => archiveFilter === "all" || (archiveFilter === "archived" ? !icp.enabled : icp.enabled)).map((icp) => {
-    const icpLeads = leads.filter((l) => l.icpId === icp.id)
-    return { icp, leads: icpLeads, counts: pipeline(icpLeads) }
-  }).filter(({icp,leads:icpLeads,counts}) => textMatches(extra.query,icp.name,icp.industry) &&
-    presenceMatches(icpLeads.length,extra.leads) && presenceMatches(counts.review,extra.review))
+    const statuses = summary.of(icp.id)
+    return { icp, statuses, total: leadCount(statuses), counts: pipelineOf(statuses) }
+  }).filter(({icp,total,counts}) => textMatches(extra.query,icp.name,icp.industry) &&
+    presenceMatches(total,extra.leads) && presenceMatches(counts.review,extra.review))
   const toReview = rows.reduce((sum, r) => sum + r.counts.review, 0)
   const waiting = rows.filter((r) => r.counts.review > 0).length
   const notEnriched = rows.reduce((sum, r) => sum + r.counts.pending, 0)
@@ -53,10 +56,10 @@ export default function IcpsPage() {
     .map((e) => ({ email: e, icpName: icps.find((i) => i.id === e.lead.icpId)?.name ?? "No ICP" }))
     .sort((a, b) => (a.email.score ?? a.email.confidence) - (b.email.score ?? b.email.confidence))
 
-  const nextRuns = rows.map(({ icp, leads: icpLeads }) => ({
+  const nextRuns = rows.map(({ icp, statuses }) => ({
     icp,
-    fetch: icpLeads.filter((l) => l.status === "imported" || l.status === "failed").length,
-    draft: icpLeads.filter((l) => l.status === "enriched" || l.status === "no_content").length,
+    fetch: leadCount(statuses, ["imported", "failed"]),
+    draft: leadCount(statuses, ["enriched", "no_content"]),
   }))
 
   const newButton = (
@@ -99,7 +102,7 @@ export default function IcpsPage() {
           />
         ) : (
           <ul className="divide-y divide-rule overflow-hidden rounded-lg border">
-            {rows.map(({ icp, leads: icpLeads, counts }) => (
+            {rows.map(({ icp, statuses, total, counts }) => (
               <li
                 key={icp.id}
                 className="grid gap-x-8 gap-y-4 px-5 py-5 transition-colors hover:bg-muted/60 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.3fr)_auto] lg:items-center"
@@ -127,10 +130,10 @@ export default function IcpsPage() {
                   <div className="mb-2 flex items-baseline justify-between text-xs text-muted-foreground">
                     <span>Pipeline</span>
                     <span className="tabular-nums">
-                      <span className="text-foreground">{icpLeads.length}</span> leads
+                      <span className="text-foreground">{total}</span> leads
                     </span>
                   </div>
-                  <PipelineStrip leads={icpLeads} />
+                  <PipelineStrip statuses={statuses} />
                 </div>
                 <div className="flex items-center justify-between gap-5 lg:justify-end">
                   <div className="text-right">

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { ArrowLeft, ArrowRight, ExternalLink, LayoutGrid, List, Mail, MessageSquareText, Search, SlidersHorizontal, Sparkles, ThumbsDown, ThumbsUp, X } from "lucide-react"
 import { toast } from "sonner"
 import { BackendError, WorkspaceGate } from "@/components/companies/backend-state"
@@ -13,7 +13,8 @@ import { ListTools } from "@/components/list-tools"
 import { Pager } from "@/components/pager"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { filterFeedback } from "@/lib/feedback-filter"
+import { type EmailFilters as EmailListFilters, fetchEmail, fetchEmailIds, fetchEmailsPage, fetchRated } from "@/lib/lists"
+import { useDebounced } from "@/lib/use-debounced"
 import { PageHeader } from "@/components/page-header"
 import { Pill } from "@/components/status"
 import { TableSkeleton } from "@/components/table-skeleton"
@@ -25,7 +26,6 @@ import {
   type ApiIcp,
   type EmailDraft,
   type PromptSuggestion,
-  fetchEmails,
   fetchIcps,
   rateEmail,
   saveEmailAsExample,
@@ -37,11 +37,12 @@ import { useStore } from "@/lib/store"
 import { cn } from "@/lib/utils"
 
 const MIN_RATED = 3
-const FILTERS = [
-  { value: "unrated", label: "Not rated", test: (d: EmailDraft) => !d.feedback },
-  { value: "good", label: "Good", test: (d: EmailDraft) => d.feedback?.rating === "good" },
-  { value: "bad", label: "Bad", test: (d: EmailDraft) => d.feedback?.rating === "bad" },
-  { value: "all", label: "All", test: () => true },
+// The rating tabs; each counts the emails under the same search and filters (from the server).
+const FILTERS: { value: string; label: string; count: (r: Partial<Record<"unrated" | "good" | "bad", number>>) => number }[] = [
+  { value: "unrated", label: "Not rated", count: (r) => r.unrated ?? 0 },
+  { value: "good", label: "Good", count: (r) => r.good ?? 0 },
+  { value: "bad", label: "Bad", count: (r) => r.bad ?? 0 },
+  { value: "all", label: "All", count: (r) => (r.unrated ?? 0) + (r.good ?? 0) + (r.bad ?? 0) },
 ]
 
 const name = (d: EmailDraft) => `${d.lead.firstName} ${d.lead.lastName}`.trim() || d.lead.email || "Unnamed lead"
@@ -62,7 +63,6 @@ export function FeedbackView() {
 
 function Feedback({ wsId }: { wsId: string }) {
   const router = useRouter()
-  const emails = useApi(() => fetchEmails(wsId), [wsId])
   const icps = useApi(() => fetchIcps(wsId), [wsId])
   const [icpId, setIcpId] = useState("all")
   const [filter, setFilter] = useState("unrated")
@@ -80,26 +80,47 @@ function Feedback({ wsId }: { wsId: string }) {
   const [showFilters, setShowFilters] = useState(false)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
+  // Goes up after a rating, so the page, its counts and the open email are read again.
+  const [version, setVersion] = useState(0)
+  const reload = () => setVersion((v) => v + 1)
+  // The server filters, sorts, counts and pages (its search also matches tag labels and ICP names, as before).
+  const typedQuery = useDebounced(query)
+  const filters: EmailListFilters = useMemo(() => ({
+    icp: icpId === "all" ? undefined : icpId, terms: typedQuery, hook: hookFilter === "all" ? undefined : hookFilter, tag: tagFilter,
+    scoreBand: scoreFilter, rated: filter, sort,
+  }), [icpId, typedQuery, hookFilter, tagFilter, scoreFilter, filter, sort])  // prettier-ignore
+  const emails = useApi(() => fetchEmailsPage(wsId, filters, page, pageSize), [wsId, filters, page, pageSize, version])
+  // How many emails there are and how many are rated: in the workspace, and in the ICP picked.
+  const rated = useApi(() => fetchRated(wsId), [wsId, version])
+  const oneIcp = icpId !== "all" && icpId !== "none"
+  const ratedIcp = useApi(() => (oneIcp ? fetchRated(wsId, icpId) : Promise.resolve(null)), [wsId, icpId, version])
+  // The open email is read on its own, so it stays open after it's rated.
+  const opened = useApi(() => (openId ? fetchEmail(wsId, openId) : Promise.resolve(null)), [wsId, openId, version])
 
   if (emails.error && !emails.data) return <BackendError message={emails.error} onRetry={emails.reload} />
   if (!emails.data) return <TableSkeleton rows={6} />
 
   const icpName = new Map((icps.data ?? []).map((i) => [i.id, i.name]))
-  const forIcp = emails.data.filter((d) => icpId === "all" || (icpId === "none" ? !d.lead.icpId : d.lead.icpId === icpId))
-  const matching = filterFeedback(forIcp, { query, hook: hookFilter, tag: tagFilter, score: scoreFilter, sort }, icpName, TAG_LABEL)
-  const visible = matching.filter(FILTERS.find((f) => f.value === filter)!.test)
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(visible.length / pageSize)))
-  const shown = visible.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const shown = emails.data.items
+  const total = emails.data.total
+  const ratings = emails.data.ratings
+  const currentPage = page
+  if (!shown.length && total > 0 && page > 1) setPage(Math.max(1, Math.ceil(total / pageSize)))
   const hasFilters = !!query || icpId !== "all" || hookFilter !== "all" || tagFilter !== "all" || scoreFilter !== "all" || filter !== "unrated"
   const extraFilters = Number(hookFilter !== "all") + Number(tagFilter !== "all") + Number(scoreFilter !== "all")
   const resetFilters = () => { setQuery(""); setIcpId("all"); setIcpQuery(""); setHookFilter("all"); setTagFilter("all"); setScoreFilter("all"); setFilter("unrated"); setPage(1) }
-  const availableIds = new Set(emails.data.map((d) => d.id))
-  const navigationIds = openOrder.filter((id) => availableIds.has(id))
+  const navigationIds = openOrder
   const openIndex = navigationIds.indexOf(openId ?? "")
-  const openEmail = (id: string) => { setOpenOrder(visible.map((d) => d.id)); setOpenId(id) }
-  const open = emails.data.find((d) => d.id === openId) ?? null
+  const openEmail = (id: string) => {
+    setOpenId(id)
+    setOpenOrder(shown.map((d) => d.id))
+    // Previous and next step through every match, on every page, in this order.
+    void fetchEmailIds(wsId, filters).then(setOpenOrder).catch(() => {})
+  }
+  const fromPage = shown.find((d) => d.id === openId)
+  const open = openId ? (opened.data?.id === openId ? opened.data : (fromPage ?? null)) : null
   const activeIcp = icps.data?.find((i) => i.id === icpId)
-  const ratedForIcp = forIcp.filter((d) => d.feedback).length
+  const ratedForIcp = ratedIcp.data?.rated ?? 0
 
   const saveAsExample = async (d: EmailDraft) => {
     setBusy(`example-${d.id}`)
@@ -123,7 +144,7 @@ function Feedback({ wsId }: { wsId: string }) {
       const keep = d.feedback?.rating === rating
       await rateEmail(wsId, d.id, { rating, tags: keep ? d.feedback!.tags : [], note: keep ? d.feedback!.note : "" })
       toast.success(rating === "good" ? "Marked good" : "Marked bad")
-      emails.reload()
+      reload()
     } catch (e) {
       toast.error("Couldn't save the rating", { description: e instanceof Error ? e.message : undefined })
     } finally {
@@ -131,7 +152,7 @@ function Feedback({ wsId }: { wsId: string }) {
     }
   }
 
-  if (emails.data.length === 0)
+  if (rated.data?.total === 0)
     return (
       <EmptyState
         icon={MessageSquareText}
@@ -148,12 +169,12 @@ function Feedback({ wsId }: { wsId: string }) {
   return (
     <>
       <ListTools wsId={wsId} scope="feedback" filters={{ query, icpId, filter, hook: hookFilter, tag: tagFilter, score: scoreFilter, sort, view }}
-        onApply={(v) => { setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "unrated"); setHookFilter(["all", "with", "without"].includes(v.hook) ? v.hook : "all"); setTagFilter(v.tag in TAG_LABEL ? v.tag : "all"); setScoreFilter(["all", "low", "medium", "high", "unscored"].includes(v.score) ? v.score : "all"); setSort(["newest", "oldest", "rated", "score-low", "score-high"].includes(v.sort) ? v.sort : "newest"); setView(v.view === "cards" ? "cards" : "list"); setPage(1) }} onRefresh={emails.reload} />
+        onApply={(v) => { setQuery(v.query ?? ""); setIcpId(v.icpId ?? "all"); setFilter(FILTERS.some((f) => f.value === v.filter) ? v.filter : "unrated"); setHookFilter(["all", "with", "without"].includes(v.hook) ? v.hook : "all"); setTagFilter(v.tag in TAG_LABEL ? v.tag : "all"); setScoreFilter(["all", "low", "medium", "high", "unscored"].includes(v.score) ? v.score : "all"); setSort(["newest", "oldest", "rated", "score-low", "score-high"].includes(v.sort) ? v.sort : "newest"); setView(v.view === "cards" ? "cards" : "list"); setPage(1) }} onRefresh={reload} />
       <div className="rounded-lg border bg-muted/20 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div><p className="text-sm font-medium">Feedback library</p>
             <p className="text-xs text-muted-foreground">Open any email to read it in full, add notes, or save it as an example.</p></div>
-          <p className="text-sm tabular-nums text-muted-foreground">{emails.data.filter((d) => d.feedback).length} of {emails.data.length} rated</p>
+          <p className="text-sm tabular-nums text-muted-foreground">{rated.data ? `${rated.data.rated} of ${rated.data.total} rated` : ""}</p>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -215,13 +236,13 @@ function Feedback({ wsId }: { wsId: string }) {
               filter === f.value ? "border-data bg-data/10 font-medium" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
             )}
           >
-            <span>{f.label}</span><span className="text-2xl font-semibold tabular-nums">{matching.filter(f.test).length}</span>
+            <span>{f.label}</span><span className="text-2xl font-semibold tabular-nums">{f.count(ratings)}</span>
           </button>
         ))}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p role="status" className="text-sm text-muted-foreground">{visible.length} matching {visible.length === 1 ? "email" : "emails"}</p>
+        <p role="status" className="text-sm text-muted-foreground">{total} matching {total === 1 ? "email" : "emails"}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Select value={sort} onValueChange={(v) => { setSort(v); setPage(1) }}>
             <SelectTrigger className="w-48" aria-label="Sort feedback"><SelectValue /></SelectTrigger>
@@ -234,7 +255,7 @@ function Feedback({ wsId }: { wsId: string }) {
           </div>
         </div>
       </div>
-      {visible.length === 0 ? (
+      {total === 0 ? (
         <EmptyState icon={MessageSquareText} title="No matching emails" description="Try a different search, rating, or ICP."
           action={<Button variant="outline" onClick={resetFilters}>Reset filters</Button>} />
       ) : view === "list" ? (
@@ -317,7 +338,7 @@ function Feedback({ wsId }: { wsId: string }) {
         </ul>
       )}
 
-      {visible.length > 0 && <Pager page={currentPage} pageSize={pageSize} total={visible.length} onPage={setPage}
+      {total > 0 && <Pager page={currentPage} pageSize={pageSize} total={total} onPage={setPage}
         onPageSize={(size) => { setPageSize(size); setPage(1) }} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
@@ -382,7 +403,7 @@ function Feedback({ wsId }: { wsId: string }) {
             )}
             <section className="space-y-2 border-t border-rule px-5 py-4">
               <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Your feedback</h3>
-              <FeedbackControl key={open.id + (open.feedback?.updatedAt ?? "")} workspaceId={wsId} draft={open} onSaved={() => emails.reload()} />
+              <FeedbackControl key={open.id + (open.feedback?.updatedAt ?? "")} workspaceId={wsId} draft={open} onSaved={() => reload()} />
             </section>
             <section className="space-y-2 border-t border-rule px-5 py-4">
               <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Example emails</h3>

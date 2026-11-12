@@ -2,6 +2,8 @@
 
 import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { useState } from "react"
+import { Pager } from "@/components/pager"
+import { fetchMatchingPeople, fetchPeoplePage } from "@/lib/lists"
 import { Ban, Check, DatabaseZap, ExternalLink, Newspaper, Globe, MoreHorizontal, RotateCcw, UserSearch, X } from "lucide-react"
 import { toast } from "sonner"
 import { ArchiveRecordsButton } from "@/components/archive-records"
@@ -22,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
-  type PipelineCompany, decideCompanies, fetchAllStakeholders, fetchCompanyContent, fetchPipelineCompany, rereadCompany, researchCompanies, useApi,
+  type PipelineCompany, decideCompanies, fetchCompanyContent, fetchPipelineCompany, rereadCompany, researchCompanies, useApi,
 } from "@/lib/api" // prettier-ignore
 import { useAuth } from "@/lib/auth"
 import { compactCount, formatUsd, shortDate } from "@/lib/format"
@@ -47,13 +49,21 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
   const tab = useSearchParams().get("tab") ?? "overview"
   const { me } = useAuth()
   const company = useApi(() => fetchPipelineCompany(wsId, id), [wsId, id])
-  const people = useApi(() => fetchAllStakeholders(wsId), [wsId])
+  // The people found at this company, a page at a time (archived ones too, as before).
+  const [peoplePage, setPeoplePage] = useState(1)
+  const [peopleSize, setPeopleSize] = useState(50)
+  const people = useApi(() => fetchPeoplePage(wsId, { archive: "all", pipelineCompanyId: id }, peoplePage, peopleSize), [wsId, id, peoplePage, peopleSize])
   const content = useApi(() => fetchCompanyContent(wsId, id), [wsId, id])
   const [busy, setBusy] = useState("")
   const [finding, setFinding] = useState(false)
   const [reverifying, setReverifying] = useState(false)
   const [excluding, setExcluding] = useState(false)
   const [fillingIn, setFillingIn] = useState(false)
+  // Fill in reads the LinkedIn profiles of everyone here who has one: their ids, read when it opens.
+  const withLinkedin = useApi(
+    () => (fillingIn ? fetchMatchingPeople(wsId, { archive: "all", pipelineCompanyId: id, linkedin: "yes" }) : Promise.resolve(null)),
+    [wsId, id, fillingIn],
+  )
   const [readingPosts, setReadingPosts] = useState(false)
 
   if (company.error && !company.data)
@@ -71,7 +81,8 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
       </div>
     )
 
-  const here = (people.data ?? []).filter((p) => p.pipelineCompanyId === c.id)
+  const here = people.data?.items ?? []
+  const hereTotal = people.data?.total ?? 0
   const posts = content.data?.posts ?? []
   const canVerify = c.source !== "lead_intel"
 
@@ -179,7 +190,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                   <Newspaper /> Read posts (LinkedIn, Instagram)
                 </DropdownMenuItem>
                 <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setFillingIn(true)}>
-                  <DatabaseZap /> Fill in (Instagram, LinkedIn{here.length ? ", people" : ""})
+                  <DatabaseZap /> Fill in (Instagram, LinkedIn{hereTotal ? ", people" : ""})
                 </DropdownMenuItem>
                 {canVerify && c.researchedAt && (
                   <DropdownMenuItem disabled={!canManage(me?.role)} onSelect={() => setReverifying(true)}>
@@ -203,7 +214,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
       <Tabs defaultValue={tab} className="px-4 pb-10 md:px-8">
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="people">People ({here.length})</TabsTrigger>
+          <TabsTrigger value="people">People ({hereTotal})</TabsTrigger>
           <TabsTrigger value="posts">Posts ({posts.length})</TabsTrigger>
           <TabsTrigger value="website">Website</TabsTrigger>
         </TabsList>
@@ -225,7 +236,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
               </Block>
               <Block title="At a glance">
                 <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
-                  <Fact label="People">{here.length}</Fact>
+                  <Fact label="People">{hereTotal}</Fact>
                   <Fact label="Posts saved">{posts.length}</Fact>
                   <Fact label="Added">{shortDate(c.createdAt)}</Fact>
                   <Fact label="Verified">{c.researchedAt ? shortDate(c.researchedAt) : "Not yet"}</Fact>
@@ -238,7 +249,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
         <TabsContent value="people" className="pt-5">
           {people.loading && !people.data ? (
             <Skeleton className="h-24 w-full" />
-          ) : here.length === 0 ? (
+          ) : hereTotal === 0 ? (
             <p className="text-sm text-muted-foreground">
               Nobody found here yet.{c.status === "qualified" ? " Use Find people above." : " Approve it first, then find people."}
             </p>
@@ -267,6 +278,12 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
                   ))}
                 </TableBody>
               </Table>
+              {hereTotal > 25 && (
+                <div className="border-t px-3 py-2">
+                  <Pager page={peoplePage} pageSize={peopleSize} total={hereTotal} onPage={setPeoplePage}
+                    onPageSize={(n) => { setPeopleSize(n); setPeoplePage(1) }} />
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
@@ -311,11 +328,11 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
       {readingPosts && (
         <ReadPostsDialog wsId={wsId} companyIds={[c.id]} onClose={() => setReadingPosts(false)} onDone={() => content.reload()} />
       )}
-      {fillingIn && (
+      {fillingIn && withLinkedin.data && (
         <EnrichDialog
           wsId={wsId}
           companyIds={[c.id]}
-          personIds={here.filter((p) => p.linkedinUrl).map((p) => p.id)}
+          personIds={withLinkedin.data.map((p) => p.id)}
           onClose={() => setFillingIn(false)}
           onDone={() => {
             company.reload()

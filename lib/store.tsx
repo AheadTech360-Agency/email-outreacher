@@ -14,10 +14,9 @@ export type VersionDraft = Pick<PromptVersion, "systemPrompt" | "userPrompt" | "
 
 interface Store {
   icps: ICP[]
-  /** The workspace's leads, from the backend. Empty until loaded; see leadsStatus. */
-  leads: Lead[]
-  leadsStatus: "loading" | "ready" | "error"
-  leadsError: string | null
+  /** Goes up whenever leads change (added, moved, deleted, or written to elsewhere): pages that show leads read
+   * them again then. Leads themselves are read a page at a time by those pages (lib/lists.ts), never all at once. */
+  leadsVersion: number
   reloadLeads: () => void
   templates: PromptTemplate[]
   versions: PromptVersion[]
@@ -98,9 +97,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [icpsStatus, setIcpsStatus] = useState<Store["icpsStatus"]>("loading")
   const [icpsError, setIcpsError] = useState<string | null>(null)
   const [icpsTick, setIcpsTick] = useState(0)
-  const [leads, setLeads] = useState<Lead[]>([])
-  const [leadsStatus, setLeadsStatus] = useState<Store["leadsStatus"]>("loading")
-  const [leadsError, setLeadsError] = useState<string | null>(null)
   const [leadsTick, setLeadsTick] = useState(0)
   const [templates, setTemplates] = useState<PromptTemplate[]>([])
   const [versions, setVersions] = useState<PromptVersion[]>([])
@@ -203,28 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setWorkspacesTick((t) => t + 1)
   }, [])
 
-  // Leads belong to the workspace; they reload when it changes or after a change is saved.
-  useEffect(() => {
-    if (!currentWorkspaceId) return
-    let live = true
-    api
-      .fetchLeads(currentWorkspaceId)
-      .then((list) => {
-        if (!live) return
-        setLeads(list)
-        setLeadsStatus("ready")
-        setLeadsError(null)
-      })
-      .catch((e: unknown) => {
-        if (!live) return
-        setLeadsStatus("error")
-        setLeadsError(e instanceof Error ? e.message : "Couldn't load leads.")
-      })
-    return () => {
-      live = false
-    }
-  }, [currentWorkspaceId, leadsTick])
-
+  // Pages that show leads read them a page at a time and again whenever this goes up.
   const reloadLeads = useCallback(() => setLeadsTick((t) => t + 1), [])
 
   // ICPs come from Lead Intel (shared with it) plus this workspace's outreach settings, so they
@@ -329,18 +304,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addLead: Store["addLead"] = async (input) => {
     const lead = await api.addLeadApi(currentWorkspaceId, input)
-    setLeads((list) => [lead, ...list])
+    reloadLeads()
     return lead
   }
 
   const moveLeads: Store["moveLeads"] = async (ids, icpId) => {
     await api.moveLeadsApi(currentWorkspaceId, ids, icpId)
-    setLeads((list) => list.map((l) => (ids.includes(l.id) ? { ...l, icpId } : l)))
+    reloadLeads()
   }
 
   const deleteLeads: Store["deleteLeads"] = async (ids) => {
     await api.deleteLeadsApi(currentWorkspaceId, ids)
-    setLeads((list) => list.filter((l) => !ids.includes(l.id)))
+    reloadLeads()
   }
 
   const saveVersion: Store["saveVersion"] = async (templateId, draft, note) => {
@@ -449,9 +424,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     <StoreContext.Provider
       value={{
         icps,
-        leads,
-        leadsStatus,
-        leadsError,
+        leadsVersion: leadsTick,
         reloadLeads,
         templates,
         versions,
