@@ -244,8 +244,28 @@ export interface ScoringSettings {
   dailyAutoSendCap: number
 }
 
-/** prospector: only Quick Start's LinkedIn option, and only the companies and people from the runs they start. */
+/** prospector: only the Quick Start searches an admin allows them, and only the companies and people from the runs they start. */
 export type Role = "prospector" | "sales" | "management" | "admin"
+
+/** What an admin lets a Prospector do. */
+export interface ProspectorPermissions {
+  /** Which searches they may start. */
+  search: ("google_maps" | "linkedin")[]
+  /** Whose posts their runs read. */
+  posts: ("linkedin" | "instagram")[]
+  /** What the analysis reads about each company and its people. */
+  analysisReads: ("website" | "posts" | "company_profile" | "people_profiles")[]
+  /** What it writes: the company part, the people part, or both. */
+  analysisWrites: ("company" | "people")[]
+}
+
+/** What Prospectors could always do: a user with nothing set has these. */
+export const DEFAULT_PERMISSIONS: ProspectorPermissions = {
+  search: ["linkedin"],
+  posts: ["linkedin", "instagram"],
+  analysisReads: ["website", "posts", "company_profile", "people_profiles"],
+  analysisWrites: ["company", "people"],
+}
 
 export const ROLES: Role[] = ["prospector", "sales", "management", "admin"]
 
@@ -261,6 +281,8 @@ export interface User {
   /** null until they first sign in. */
   lastActiveAt: string | null
   createdAt: string
+  /** A Prospector's: what they may do. */
+  permissions: ProspectorPermissions
 }
 
 export interface Workspace {

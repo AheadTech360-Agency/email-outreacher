@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { accessToken, supabase } from "./supabase"
-import type { Company, ICP, IcpOutreach, Lead, LeadStatus, PromptKind, PromptTemplate, PromptVersion, Role, Settings, User, Workspace } from "./types"
+import type { Company, ICP, IcpOutreach, Lead, LeadStatus, PromptKind, PromptTemplate, PromptVersion, ProspectorPermissions, Role, Settings, User, Workspace } from "./types"
 
 // The backend. Pages fetch on mount and show their own loading and error states.
 
@@ -539,12 +539,19 @@ export const fetchMe = () => api<User>("/me")
 export const fetchUsers = () => api<User[]>("/users")
 
 /** Adds them and makes their sign-in with this password; "existing" when the email already had one (from Lead Intel). */
-export const addUserApi = (body: { name: string; email: string; role: Role; workspaceIds: string[]; password: string }) =>
+export const addUserApi = (body: {
+  name: string
+  email: string
+  role: Role
+  workspaceIds: string[]
+  password: string
+  permissions?: ProspectorPermissions
+}) =>
   api<User & { signIn: "created" | "existing" }>("/users", { method: "POST", body })
 
 export const updateUserApi = (
   id: string,
-  body: Partial<{ name: string; role: Role; status: "active" | "deactivated"; workspaceIds: string[] }>,
+  body: Partial<{ name: string; role: Role; status: "active" | "deactivated"; workspaceIds: string[]; permissions: ProspectorPermissions }>,
 ) => api<User>(`/users/${id}`, { method: "PATCH", body })
 
 export const removeUserApi = (id: string) => api<void>(`/users/${id}`, { method: "DELETE" })
@@ -1492,14 +1499,17 @@ export const startQuickstart = (workspaceId: string, body: QuickstartSettings & 
   api<QuickstartRun>("/quickstart/runs", { workspaceId, method: "POST", body })
 
 /** What a run worked on, in a few words: its search, or the companies it was given. */
+/** Runs that end with an analysis instead of emails: the LinkedIn option, and every Prospector's run. */
+export const endsWithAnalysis = (s: QuickstartSettings) => s.source === "linkedin" || !!s.prospector
+
 export const runWhere = (s: QuickstartSettings) =>
   s.source === "existing"
     ? "Companies you already have"
     : s.source === "linkedin"
       ? `${s.prospector ? "Search" : "LinkedIn"}: ${s.searchTerms.join(", ")}${s.places.length ? ` in ${s.places.join("; ")}` : ""}`
-      : `${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
+      : `${s.prospector ? "Search: " : ""}${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
 
-/** A company a LinkedIn run analysed: its data, links, latest posts and brief. */
+/** A company a run analysed (LinkedIn, or any Prospector's): its data, links, latest posts and brief. */
 export interface CompanyBrief {
   id: string
   name: string
@@ -1525,6 +1535,8 @@ export interface CompanyBrief {
     cautions: string[]
     /** Each person found there, best to email first (analyses written before this have none). */
     people?: { name: string; title: string; who: string; angle: string; opener: string; evidence: string }[]
+    /** What was written: a Prospector's run may write only the company part or only the people part. */
+    parts?: ("company" | "people")[]
   }
   posts: { source: string; url: string; postedAt: string | null; text: string; whose: string }[]
   /** The people at the company, with how to reach them. */

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Copy, RefreshCw } from "lucide-react"
 import { toast } from "sonner"
 import { ProspectorAccess, accessKey } from "@/components/users/prospector-access"
+import { ProspectorPermissionsPicker, permissionErrors } from "@/components/users/prospector-permissions"
 import { RolePicker } from "@/components/users/role-picker"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -14,7 +15,7 @@ import { type AccessGrant, fetchUserAccess, saveUserAccess } from "@/lib/api"
 import { EMAIL_PATTERN } from "@/lib/format"
 import { ROLE_LABEL, otherActiveAdmins } from "@/lib/roles"
 import { useStore } from "@/lib/store"
-import type { Role, User } from "@/lib/types"
+import { DEFAULT_PERMISSIONS, type ProspectorPermissions, type Role, type User } from "@/lib/types"
 
 /** Add someone (with their sign-in and first password), or edit a user's name, role and workspaces. */
 export function UserDialog({ user, initialRole, onClose }: { user?: User; initialRole?: Role; onClose: () => void }) {
@@ -35,7 +36,8 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
   const [password, setPassword] = useState(() => (user ? "" : newPassword()))
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState("")
-  const [touched, setTouched] = useState({ name: false, email: false, password: false })
+  const [touched, setTouched] = useState({ name: false, email: false, password: false, permissions: false })
+  const [permissions, setPermissions] = useState<ProspectorPermissions>(user?.permissions ?? DEFAULT_PERMISSIONS)
   // A Prospector sees only what's theirs and what's shared here: each item to use, or to edit.
   const prospector = role === "prospector"
   const [grants, setGrants] = useState<Map<string, AccessGrant>>(new Map())
@@ -67,12 +69,14 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
     // Admins see every workspace, so there's nothing to choose.
     workspaces: role === "admin" || workspaceIds.length ? "" : "Pick at least one workspace",
   }
-  const valid = !errors.name && !errors.email && !errors.password && !errors.workspaces
+  const permissionProblems = permissionErrors(permissions)
+  const permissionsOk = !prospector || (!permissionProblems.search && !permissionProblems.analysisWrites)
+  const valid = !errors.name && !errors.email && !errors.password && !errors.workspaces && permissionsOk
   const allWorkspaces = role === "admin"
 
   const submit = async () => {
     if (!valid) {
-      setTouched({ name: true, email: true, password: true })
+      setTouched({ name: true, email: true, password: true, permissions: true })
       return
     }
     const ids = allWorkspaces ? workspaces.map((w) => w.id) : workspaceIds
@@ -89,7 +93,7 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
       setFailure("")
       try {
         // The role and workspaces first: sharing is checked against them.
-        await updateUser(user.id, { name: name.trim(), role, workspaceIds: ids })
+        await updateUser(user.id, { name: name.trim(), role, workspaceIds: ids, permissions })
         await saveUserAccess(user.id, shared)
         toast.success(`Saved ${name.trim()}`)
         onClose()
@@ -103,7 +107,7 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
     setSaving(true)
     setFailure("")
     try {
-      const { signIn, id } = await inviteUser({ name, email, role, workspaceIds: ids, password })
+      const { signIn, id } = await inviteUser({ name, email, role, workspaceIds: ids, password, ...(prospector && { permissions }) })
       if (prospector && shared.length) {
         try {
           await saveUserAccess(id, shared)
@@ -259,6 +263,16 @@ export function UserDialog({ user, initialRole, onClose }: { user?: User; initia
               </>
             )}
           </fieldset>
+
+          {prospector && (
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">What they can do</legend>
+              <p className="text-[13px] text-muted-foreground">
+                In Quick Start. Their runs never write emails, and they never see which tools found or read anything.
+              </p>
+              <ProspectorPermissionsPicker value={permissions} onChange={setPermissions} showErrors={touched.permissions} />
+            </fieldset>
+          )}
 
           {prospector && (
             <fieldset className="space-y-1.5">

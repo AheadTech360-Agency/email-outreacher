@@ -25,6 +25,7 @@ import {
   fetchQuickstartRun,
   queueEmails,
   decideCompanies,
+  endsWithAnalysis,
   resumeQuickstart,
   runWhere,
   stopQuickstart,
@@ -136,7 +137,7 @@ function Run({ wsId, runId }: { wsId: string; runId: string }) {
       <div className="space-y-8 px-4 pb-10 md:px-8">
         <Summary run={r} />
         <Steps run={r} />
-        {r.settings.source === "linkedin" ? <Briefs wsId={wsId} run={r} /> : <Drafts wsId={wsId} run={r} onChanged={run.reload} />}
+        {endsWithAnalysis(r.settings) ? <Briefs wsId={wsId} run={r} /> : <Drafts wsId={wsId} run={r} onChanged={run.reload} />}
         <Companies wsId={wsId} run={r} onChanged={run.reload} />
         <RunPeople wsId={wsId} run={r} />
         <p className="text-sm">
@@ -247,7 +248,7 @@ function Summary({ run }: { run: QuickstartDetail }) {
       unit: "leads",
       rest: `${l.filter((x) => x.emailStatus === "valid").length} valid · ${l.filter((x) => x.emailStatus === "website").length} from websites · ${l.filter((x) => x.emailStatus === "risky").length} risky`,
     },
-    run.settings.source === "linkedin"
+    endsWithAnalysis(run.settings)
       ? { label: "Briefs", value: run.steps.analysis?.done ?? 0, unit: "companies", rest: "With the hooks to use" }
       : {
           label: "Emails",
@@ -517,6 +518,8 @@ function Briefs({ wsId, run }: { wsId: string; run: QuickstartDetail }) {
 
 function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean }) {
   const b = c.brief
+  // Written before parts were kept: both.
+  const companyPart = !b.parts || b.parts.includes("company")
   const links = [
     ["Website", c.websiteUrl ?? (c.domain ? `https://${c.domain}` : null)],
     ["LinkedIn", c.linkedinUrl],
@@ -535,7 +538,7 @@ function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean 
       <div className="grid gap-5 border-t px-4 py-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-4 text-sm">
           <p>{b.summary}</p>
-          <p className="text-muted-foreground">{b.fit}</p>
+          {b.fit && <p className="text-muted-foreground">{b.fit}</p>}
           {b.hooks.length > 0 && (
             <div className="space-y-2">
               <h3 className="text-sm font-semibold">Hooks to use</h3>
@@ -566,7 +569,7 @@ function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean 
               ))}
             </div>
           )}
-          <p className="text-muted-foreground">{b.online}</p>
+          {companyPart && b.online && <p className="text-muted-foreground">{b.online}</p>}
           {b.posting_themes.length > 0 && <BriefList title="What they post about" items={b.posting_themes} />}
           {c.posts.length > 0 && (
             <div className="space-y-2">

@@ -76,9 +76,11 @@ interface Store {
   currentWorkspaceId: string
   setCurrentWorkspace: (id: string) => void
   /** Adds them and makes their sign-in. Waits for the answer: it can be refused (a weak password, say). */
-  inviteUser: (input: Pick<User, "name" | "email" | "role" | "workspaceIds"> & { password: string }) => Promise<{ signIn: "created" | "existing"; id: string }>
+  inviteUser: (
+    input: Pick<User, "name" | "email" | "role" | "workspaceIds"> & { password: string; permissions?: User["permissions"] },
+  ) => Promise<{ signIn: "created" | "existing"; id: string }>
   /** Shown at once; the returned promise settles when the backend has it (a failure is shown and the list reloaded). */
-  updateUser: (id: string, patch: Partial<Pick<User, "name" | "role" | "workspaceIds" | "status">>) => Promise<void>
+  updateUser: (id: string, patch: Partial<Pick<User, "name" | "role" | "workspaceIds" | "status" | "permissions">>) => Promise<void>
   removeUser: (id: string) => void
   /** Saved in the backend. Rejects with the backend's reason (e.g. the name is taken). */
   createWorkspace: (input: { name: string; description: string; memberIds: string[] }) => Promise<Workspace>

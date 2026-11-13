@@ -18,13 +18,15 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { fetchQuickstartLimits, fetchQuickstartRuns, fetchSmartLists, runWhere, startQuickstart, useApi } from "@/lib/api"
+import { fetchQuickstartLimits, fetchQuickstartRuns, fetchSmartLists, endsWithAnalysis, runWhere, startQuickstart, useApi } from "@/lib/api"
 import { useAuth } from "@/lib/auth"
 import { ENRICH_COST } from "@/lib/costs"
 import { formatUsd, shortDate } from "@/lib/format"
 import { isProspector } from "@/lib/roles"
 import { useStore } from "@/lib/store"
-import type { ICP } from "@/lib/types"
+import { DEFAULT_PERMISSIONS, type ICP } from "@/lib/types"
+
+const SEARCHES = ["google_maps", "linkedin"] as const
 
 // What each step costs, at the prices Coldbrew uses elsewhere (Google Maps, Apify on the Bronze plan, Claude Haiku).
 const PRICE = {
@@ -90,7 +92,7 @@ function QuickstartHome({ wsId }: { wsId: string }) {
                   </span>
                 </span>
                 <span className="text-xs text-muted-foreground tabular-nums">
-                  {r.settings.source === "linkedin" ? `${r.steps.analysis?.done ?? 0} briefs` : `${r.steps.write?.done ?? 0} drafts`} · {formatUsd(r.spentUsd)} of {formatUsd(r.spendLimitUsd)}
+                  {endsWithAnalysis(r.settings) ? `${r.steps.analysis?.done ?? 0} briefs` : `${r.steps.write?.done ?? 0} drafts`} · {formatUsd(r.spentUsd)} of {formatUsd(r.spendLimitUsd)}
                 </span>
                 <Pill tone={RUN_STATUS[r.status].tone}>{RUN_STATUS[r.status].label}</Pill>
               </Link>
@@ -106,13 +108,16 @@ function NewRun({ wsId }: { wsId: string }) {
   const { icps } = useStore()
   const { me } = useAuth()
   const router = useRouter()
-  // A Prospector only has the LinkedIn option, free web search, and the workspace's most per run.
+  // A Prospector has only the searches an admin allows them, free web search, and the workspace's most per run.
   const prospector = isProspector(me?.role)
+  const allowed = { ...DEFAULT_PERMISSIONS, ...me?.permissions }
+  const searches = SEARCHES.filter((s) => allowed.search.includes(s))
+  const noPosts = prospector && allowed.posts.length === 0
   const limits = useApi(() => (prospector ? fetchQuickstartLimits(wsId) : Promise.resolve(null)), [wsId, prospector])
   const cap = limits.data?.spendLimitUsd ?? null
   const ready = icps.filter((i) => i.enabled && hasOffer(i))
   const [picked, setSource] = useState<"google_maps" | "existing" | "linkedin">("google_maps")
-  const source = prospector ? "linkedin" : picked
+  const source = prospector ? (searches.find((s) => s === picked) ?? searches[0] ?? "linkedin") : picked
   const existing = source === "existing"
   const linkedin = source === "linkedin"
   const lists = useApi(() => (prospector ? Promise.resolve(null) : fetchSmartLists(wsId, "company")), [wsId, prospector])
@@ -169,13 +174,14 @@ function NewRun({ wsId }: { wsId: string }) {
         },
       ]
     : [
-        { step: "Find companies (Google Maps)", cost: num("requests") * PRICE.googleRequest },
+        { step: prospector ? "Find companies" : "Find companies (Google Maps)", cost: num("requests") * PRICE.googleRequest },
         { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
         { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
       ]
-  lines.push({ step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post })
-  // The LinkedIn option ends with a brief per company; the others write the emails.
-  lines.push(linkedin ? { step: `Analyse ${num("companies")} companies and their people: hooks to use`, cost: num("companies") * PRICE.brief }
+  if (!noPosts) lines.push({ step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post })
+  // The LinkedIn option, and any Prospector's run, ends with a brief per company; the others write the emails.
+  const analysis = linkedin || prospector
+  lines.push(analysis ? { step: `Analyse ${num("companies")} companies and their people: hooks to use`, cost: num("companies") * PRICE.brief }
     : { step: `Write ${leads} emails`, cost: leads * PRICE.write })
   // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
   const requestsNeeded = places.length + terms.length * places.length * 3
@@ -188,7 +194,8 @@ function NewRun({ wsId }: { wsId: string }) {
     !existing && !terms.length && "Add a search term",
     source === "google_maps" && !places.length && "Add a place",
     source === "google_maps" && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
-    source === "google_maps" && !(num("requests") >= 2 && num("requests") <= 100) && "Google requests: 2 to 100",
+    source === "google_maps" && !(num("requests") >= 2 && num("requests") <= 100) && `${prospector ? "Searches" : "Google requests"}: 2 to 100`,
+    prospector && !searches.length && "Your account has no searches allowed. Ask an admin.",
     !(num("companies") >= 1 && num("companies") <= (existing ? 2000 : linkedin ? 200 : 100)) && `Companies: 1 to ${existing ? "2,000" : linkedin ? 200 : 100}`,
     !(num("people") >= 1 && num("people") <= 10) && "People per company: 1 to 10",
     !(num("leads") >= 1 && num("leads") <= 2000) && "Most leads: 1 to 2,000",
@@ -210,7 +217,7 @@ function NewRun({ wsId }: { wsId: string }) {
         icpId: icp.id, source, smartListId: existing && listId !== "all" ? listId : null, findPeople,
         searchTerms: existing ? [] : terms, places: existing ? [] : places, radiusMiles: num("radius"), googleRequests: num("requests"),
         companies: num("companies"), peoplePerCompany: num("people"), titles, findEmails, leads: num("leads"),
-        onlyWithEmail, postsPerLead: num("posts"), maxPostAgeDays: icp.maxPostAgeDays ?? 60, spendLimitUsd: limit,
+        onlyWithEmail, postsPerLead: noPosts ? 0 : num("posts"), maxPostAgeDays: icp.maxPostAgeDays ?? 60, spendLimitUsd: limit,
         webSearch: googleSearch ? "google" : "brave",
       })  // prettier-ignore
       toast.success("Quick Start is running", { description: "You can leave this page: it carries on in the background." })
@@ -254,9 +261,31 @@ function NewRun({ wsId }: { wsId: string }) {
         ))}
       </div>
       )}
-      {prospector && (
+      {prospector && searches.length > 1 && (
+        <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Which search">
+          {([
+            ["google_maps", "Search local businesses", "Businesses around the places you pick: verify them, find their people, then get an analysis of each."],
+            ["linkedin", "Search company profiles", "Companies that match the ICP, with their websites and socials: verify them, find their people, then get an analysis of each."],
+          ] as const).map(([key, title, hint]) => (
+            <button
+              key={key}
+              type="button"
+              role="radio"
+              aria-checked={source === key}
+              onClick={() => setSource(key)}
+              className={`rounded-lg border p-3 text-left transition-colors ${source === key ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+            >
+              <span className="block text-sm font-medium">{title}</span>
+              <span className="block text-xs text-muted-foreground">{hint}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {prospector && searches.length <= 1 && (
         <p className="text-sm text-muted-foreground">
-          Find companies, their websites and socials, verify them, find their people, then get an analysis of each company and its people, with the hooks to use.
+          {source === "google_maps"
+            ? "Find local businesses around the places you pick, verify them, find their people, then get an analysis of each company and its people."
+            : "Find companies, their websites and socials, verify them, find their people, then get an analysis of each company and its people, with the hooks to use."}
         </p>
       )}
 
@@ -314,7 +343,7 @@ function NewRun({ wsId }: { wsId: string }) {
           <Label htmlFor="qs-terms">2. What to search {prospector ? "" : linkedin ? "LinkedIn " : "Google Maps "}for</Label>
           <TagInput id="qs-terms" value={terms} onChange={setTerms} placeholder="screen printing" />
           <p className="text-xs text-muted-foreground">
-            {prospector ? "Searched one after another until the limit." : linkedin ? "Searched on LinkedIn one after another until the limit." : "What you'd type into Google Maps."} Press Enter after each.
+            {linkedin ? (prospector ? "Searched one after another until the limit." : "Searched on LinkedIn one after another until the limit.") : prospector ? "What you'd type into a map search." : "What you'd type into Google Maps."} Press Enter after each.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -338,7 +367,7 @@ function NewRun({ wsId }: { wsId: string }) {
           {source === "google_maps" &&
             number(
               "requests",
-              "Google requests",
+              prospector ? "Searches" : "Google requests",
               num("requests") < requestsNeeded
                 ? `Too few for ${terms.length * places.length} searches: about ${requestsNeeded} lets each one run.`
                 : "Each finds up to 20 businesses.",
@@ -350,8 +379,8 @@ function NewRun({ wsId }: { wsId: string }) {
               ? number("companies", "Companies to find", "Up to 200 a run, new ones only.")
               : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
           {number("people", "People per company", existing ? "Those with an email first." : prospector ? "Found at each company." : "Found on LinkedIn.")}
-          {number("leads", linkedin ? "Most people" : "Most emails", linkedin ? "People whose posts are read." : "People who get an email.")}
-          {number("posts", "Posts per person", linkedin ? "0 skips reading posts." : "0 writes without posts.")}
+          {number("leads", analysis ? "Most people" : "Most emails", analysis ? (noPosts ? "People kept for the analysis." : "People whose posts are read.") : "People who get an email.")}
+          {!noPosts && number("posts", "Posts per person", analysis ? "0 skips reading posts." : "0 writes without posts.")}
         </div>
       </div>
 
@@ -431,8 +460,8 @@ function NewRun({ wsId }: { wsId: string }) {
           </p>
         )}
         <p className="text-xs text-muted-foreground">
-          {linkedin
-            ? "Nothing is written or sent: the run ends with a brief on each company and the hooks to use."
+          {analysis
+            ? "Nothing is written or sent: the run ends with an analysis of each company and its people, and the hooks to use."
             : "Nothing is queued or sent: the run ends with drafts for you to approve, and queueing is still your call."}
         </p>
       </div>
