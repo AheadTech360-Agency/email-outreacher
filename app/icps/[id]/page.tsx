@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 import { EditIcpDefinition } from "@/components/edit-icp-definition"
+import { Say, usePlain } from "@/components/say"
 import { BasicsFields, LeadIntelRule, MessagingFields, ProductField, AnalysisSourcesFields, TargetingFields, VerificationSourcesFields, toDraft, type IcpDraft } from "@/components/icp-form"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -22,6 +23,7 @@ function DefinitionForm({ icp }: { icp: ICP }) {
   const { updateIcp, settings } = useStore()
   // Shared with a Prospector to use only: they read it, and nothing here can be changed.
   const readOnly = icp.canEdit === false
+  const plain = usePlain()
   const [draft, setDraft] = useState<IcpDraft>(() => toDraft(icp))
   const [saving, setSaving] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -76,10 +78,14 @@ function DefinitionForm({ icp }: { icp: ICP }) {
             <CardHeader>
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1.5">
-                  <CardTitle>Lead Intel definition</CardTitle>
+                  <CardTitle>
+                    <Say team="Lead Intel definition" plain="Who they are" />
+                  </CardTitle>
                   <CardDescription>
-                    Who this ICP is: the words Google Maps and Apollo search with, where, and the rule research checks
-                    companies against. Stored in Lead Intel&apos;s ICP table, which this app keeps using.
+                    <Say
+                      team="Who this ICP is: the words Google Maps and Apollo search with, where, and the rule research checks companies against. Stored in Lead Intel's ICP table, which this app keeps using."
+                      plain="Who this ICP is: the words searches use, where, and the rule companies are checked against."
+                    />
                   </CardDescription>
                 </div>
                 {!readOnly && (
@@ -96,7 +102,9 @@ function DefinitionForm({ icp }: { icp: ICP }) {
           <Card>
             <CardHeader>
               <CardTitle>Who to reach</CardTitle>
-              <CardDescription>Outreach settings for this workspace. Saved here, never in Lead Intel.</CardDescription>
+              <CardDescription>
+                <Say team="Outreach settings for this workspace. Saved here, never in Lead Intel." plain="Outreach settings for this workspace." />
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
               <TargetingFields draft={draft} set={set} />
@@ -117,7 +125,7 @@ function DefinitionForm({ icp }: { icp: ICP }) {
           </Card>
         </div>
 
-        <div className="h-fit space-y-6 lg:sticky lg:top-16">
+        <div className={plain ? "hidden" : "h-fit space-y-6 lg:sticky lg:top-16"}>
           <Card>
             <CardHeader>
               <CardTitle>Verification sources</CardTitle>

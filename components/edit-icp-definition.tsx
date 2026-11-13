@@ -6,12 +6,14 @@ import { IcpBasicsInputs, IcpRuleInputs, icpErrors, icpFields } from "@/componen
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import type { IcpCreate } from "@/lib/api"
+import { Say, usePlain } from "@/components/say"
 import { useStore } from "@/lib/store"
 import type { ICP } from "@/lib/types"
 
 /** Edit an ICP's own fields. They're saved in Lead Intel's icps table, so Lead Intel uses them too. */
 export function EditIcpDefinition({ icp, onClose }: { icp: ICP; onClose: () => void }) {
   const { icps, updateIcpDefinition } = useStore()
+  const plain = usePlain()
   const [draft, setDraft] = useState<IcpCreate>(() => icpFields(icp))
   const [touched, setTouched] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -35,7 +37,7 @@ export function EditIcpDefinition({ icp, onClose }: { icp: ICP; onClose: () => v
     try {
       const { campaignNote } = await updateIcpDefinition(icp.id, draft)
       toast.success(`Saved ${draft.name.trim()}`, {
-        description: "The next Google Maps or Apollo search, and the next research, use the new definition.",
+        description: plain ? "The next search and verification use the new definition." : "The next Google Maps or Apollo search, and the next research, use the new definition.",
       })
       // Only worth a second toast when the campaign changed or couldn't be set up.
       if (campaignNote && !campaignNote.startsWith("Its campaign is "))
@@ -53,8 +55,10 @@ export function EditIcpDefinition({ icp, onClose }: { icp: ICP; onClose: () => v
         <SheetHeader className="px-5 pt-5 pb-4">
           <SheetTitle className="text-lg">Edit {icp.name}</SheetTitle>
           <SheetDescription>
-            Searches and research use these. They&apos;re stored in Lead Intel&apos;s ICP table, which this app keeps using;
-            companies already in a pipeline aren&apos;t checked again.
+            <Say
+              team="Searches and research use these. They're stored in Lead Intel's ICP table, which this app keeps using; companies already in a pipeline aren't checked again."
+              plain="Searches and verification use these. Companies already found aren't checked again."
+            />
           </SheetDescription>
         </SheetHeader>
         <form
@@ -68,8 +72,10 @@ export function EditIcpDefinition({ icp, onClose }: { icp: ICP; onClose: () => v
           <IcpBasicsInputs icp={draft} set={set} errors={shown} onBlurName={() => setTouched(true)} />
           <div className="space-y-3 border-t border-rule pt-5">
             <div>
-              <h3 className="text-sm font-semibold">How Lead Intel recognises them</h3>
-              <p className="text-xs text-muted-foreground">The rule Lead Intel uses to put a business in this ICP.</p>
+              <h3 className="text-sm font-semibold">{plain ? "How to recognise them" : "How Lead Intel recognises them"}</h3>
+              <p className="text-xs text-muted-foreground">
+                {plain ? "The words and conditions a company must match to be verified." : "The rule Lead Intel uses to put a business in this ICP."}
+              </p>
             </div>
             <IcpRuleInputs icp={draft} set={set} errors={shown} />
           </div>
@@ -80,7 +86,7 @@ export function EditIcpDefinition({ icp, onClose }: { icp: ICP; onClose: () => v
             Cancel
           </Button>
           <Button type="submit" form="edit-icp" disabled={saving || !dirty}>
-            {saving ? "Saving…" : "Save in Lead Intel"}
+            {saving ? "Saving…" : plain ? "Save changes" : "Save in Lead Intel"}
           </Button>
         </SheetFooter>
       </SheetContent>

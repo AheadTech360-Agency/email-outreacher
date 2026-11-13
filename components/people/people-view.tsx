@@ -285,7 +285,7 @@ function PeopleList({ wsId }: { wsId: string }) {
             }}
           />
         </div>
-        <Select
+        {!prospector && <Select
           value={foundBy}
           onValueChange={(v) => {
             setFoundBy(v)
@@ -306,7 +306,7 @@ function PeopleList({ wsId }: { wsId: string }) {
               </SelectItem>
             ))}
           </SelectContent>
-        </Select>
+        </Select>}
         <Select
           value={status}
           onValueChange={(v) => {
@@ -435,7 +435,7 @@ function PeopleList({ wsId }: { wsId: string }) {
         <EmptyState
           icon={UserSearch}
           title="Nobody found yet"
-          description="Find them at qualified companies, or add them yourself: one by hand, or a CSV exported from Apollo."
+          description={prospector ? "The people your Quick Start runs find show up here." : "Find them at qualified companies, or add them yourself: one by hand, or a CSV exported from Apollo."}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Button asChild>
@@ -468,7 +468,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                 </TableHead>
                 <TableHead>Person</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Found by</TableHead>
+                {!prospector && <TableHead>Found by</TableHead>}
                 <TableHead>Email</TableHead>
                 <TableHead>Lead</TableHead>
                 <TableHead>Found</TableHead>
@@ -508,7 +508,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                         s.companyName
                       )}
                     </TableCell>
-                    <TableCell>
+                    {!prospector && <TableCell>
                       {s.source === "apify_linkedin" ? (
                         <Pill tone="info">LinkedIn</Pill>
                       ) : s.source === "manual" ? (
@@ -518,7 +518,7 @@ function PeopleList({ wsId }: { wsId: string }) {
                       ) : (
                         <span className="text-[13px] text-muted-foreground">Apollo, by company</span>
                       )}
-                    </TableCell>
+                    </TableCell>}
                     <TableCell onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col items-start gap-0.5">
                         <Pill tone={cell.tone} className="capitalize">

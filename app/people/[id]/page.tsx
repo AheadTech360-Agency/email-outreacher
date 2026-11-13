@@ -165,7 +165,7 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
                     {address && <Pill tone={address.tone}>{address.label}</Pill>}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">None yet. Reveal it from the People page (Apollo credits).</p>
+                  <p className="text-sm text-muted-foreground">{prospector ? "None found yet." : "None yet. Reveal it from the People page (Apollo credits)."}</p>
                 )}
               </Block>
               <DataGroup
@@ -221,7 +221,7 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
                   <Fact label="Emails">{theirEmails.length}</Fact>
                   <Fact label="Posts">{posts.length}</Fact>
                   <Fact label="Found">
-                    {p.emailStatus === "website" ? "Company website" : (FOUND_BY[p.source] ?? p.source)}, {shortDate(p.foundAt)}
+                    {prospector ? "Found" : p.emailStatus === "website" ? "Company website" : (FOUND_BY[p.source] ?? p.source)}, {shortDate(p.foundAt)}
                   </Fact>
                 </dl>
               </Block>
@@ -260,7 +260,7 @@ function Person({ wsId, id }: { wsId: string; id: string }) {
         <TabsContent value="posts" className="pt-5">
           {posts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No posts yet. Fetch posts on People reads the company&apos;s LinkedIn, their own, then the company&apos;s Instagram.
+              {prospector ? "No posts yet." : "No posts yet. Fetch posts on People reads the company's LinkedIn, their own, then the company's Instagram."}
             </p>
           ) : (
             <ul className="max-w-3xl divide-y">

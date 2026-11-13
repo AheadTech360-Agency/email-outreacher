@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { PageHeader } from "@/components/page-header"
 import { RUN_STATUS } from "@/components/quickstart/run-status"
+import { Say } from "@/components/say"
 import { Pill } from "@/components/status"
 import { TagInput } from "@/components/tag-input"
 import { Button } from "@/components/ui/button"
@@ -55,7 +56,12 @@ export default function QuickstartPage() {
     <>
       <PageHeader
         title="Quick Start"
-        description="From a search, or the companies you imported, to ready-to-approve emails in one go. You approve every email before anything is sent."
+        description={
+          <Say
+            team="From a search, or the companies you imported, to ready-to-approve emails in one go. You approve every email before anything is sent."
+            plain="Find companies, verify them, find their people, and get an analysis of each company and its people."
+          />
+        }
       />
       <div className="space-y-8 px-4 pb-10 md:px-8">
         <WorkspaceGate>{(wsId) => <QuickstartHome key={wsId} wsId={wsId} />}</WorkspaceGate>
@@ -140,13 +146,15 @@ function NewRun({ wsId }: { wsId: string }) {
   const peopleCost = num("companies") * PRICE.linkedinCompany + people * (findEmails ? PRICE.linkedinPersonWithEmail : PRICE.linkedinPerson)
   const lines = linkedin
     ? [
-        { step: `Find ${num("companies")} companies on LinkedIn`, cost: num("companies") * PRICE.linkedinSearch },
+        { step: `Find ${num("companies")} companies${prospector ? "" : " on LinkedIn"}`, cost: num("companies") * PRICE.linkedinSearch },
         googleSearch
           ? { step: `Search Google for their websites, socials and people (up to ${num("companies") * 4} searches)`, cost: num("companies") * 4 * PRICE.googleSearch }
-          : { step: `Search the web for their websites, socials and people (Brave, free: up to ${num("companies") * 4} of 1,000 a month)`, cost: 0 },
+          : { step: prospector ? "Search the web for their websites, socials and people (free)"
+              : `Search the web for their websites, socials and people (Brave, free: up to ${num("companies") * 4} of 1,000 a month)`, cost: 0 },
         { step: `Verify ${num("companies")} companies`, cost: num("companies") * PRICE.verify },
         { step: `Find up to ${people} people${findEmails ? " and their emails" : ""}`, cost: peopleCost },
-        { step: "Where LinkedIn finds no one: their profiles from a web search (at most)", cost: people * PRICE.profile },
+        { step: prospector ? "Where no one is found yet: a further search for their people (at most)"
+            : "Where LinkedIn finds no one: their profiles from a web search (at most)", cost: people * PRICE.profile },
       ]
     : existing
     ? [
@@ -167,7 +175,7 @@ function NewRun({ wsId }: { wsId: string }) {
       ]
   lines.push({ step: `Read up to ${num("posts")} posts for ${leads} people`, cost: leads * num("posts") * PRICE.post })
   // The LinkedIn option ends with a brief per company; the others write the emails.
-  lines.push(linkedin ? { step: `Analyse ${num("companies")} companies: hooks to use`, cost: num("companies") * PRICE.brief }
+  lines.push(linkedin ? { step: `Analyse ${num("companies")} companies and their people: hooks to use`, cost: num("companies") * PRICE.brief }
     : { step: `Write ${leads} emails`, cost: leads * PRICE.write })
   // One lookup per place, and about 3 requests (one full set of 60) for each term in each place.
   const requestsNeeded = places.length + terms.length * places.length * 3
@@ -248,7 +256,7 @@ function NewRun({ wsId }: { wsId: string }) {
       )}
       {prospector && (
         <p className="text-sm text-muted-foreground">
-          Search LinkedIn, find their websites and socials, verify them, find the people, then get a brief on each with the hooks to use.
+          Find companies, their websites and socials, verify them, find their people, then get an analysis of each company and its people, with the hooks to use.
         </p>
       )}
 
@@ -303,10 +311,10 @@ function NewRun({ wsId }: { wsId: string }) {
       ) : (
       <div className="grid gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label htmlFor="qs-terms">2. What to search {linkedin ? "LinkedIn" : "Google Maps"} for</Label>
+          <Label htmlFor="qs-terms">2. What to search {prospector ? "" : linkedin ? "LinkedIn " : "Google Maps "}for</Label>
           <TagInput id="qs-terms" value={terms} onChange={setTerms} placeholder="screen printing" />
           <p className="text-xs text-muted-foreground">
-            {linkedin ? "Searched on LinkedIn one after another until the limit." : "What you'd type into Google Maps."} Press Enter after each.
+            {prospector ? "Searched one after another until the limit." : linkedin ? "Searched on LinkedIn one after another until the limit." : "What you'd type into Google Maps."} Press Enter after each.
           </p>
         </div>
         <div className="space-y-1.5">
@@ -314,7 +322,8 @@ function NewRun({ wsId }: { wsId: string }) {
           <TagInput places id="qs-places" value={places} onChange={setPlaces} placeholder="Austin, TX" />
           <p className="text-xs text-muted-foreground">
             {linkedin
-              ? "Cities, states or countries as LinkedIn names them, like Austin or United States. Empty searches everywhere."
+              ? prospector ? "Cities, states or countries, like Austin or United States. Empty searches everywhere."
+                : "Cities, states or countries as LinkedIn names them, like Austin or United States. Empty searches everywhere."
               : "US cities or postcodes, like Austin, TX, or a whole state or the United States (searched in full)."}{" "}
             Press Enter after each.
           </p>
@@ -340,7 +349,7 @@ function NewRun({ wsId }: { wsId: string }) {
             : linkedin
               ? number("companies", "Companies to find", "Up to 200 a run, new ones only.")
               : number("companies", "Companies to verify", "Of those found. The rest wait on the Companies page.")}
-          {number("people", "People per company", existing ? "Those with an email first." : "Found on LinkedIn.")}
+          {number("people", "People per company", existing ? "Those with an email first." : prospector ? "Found at each company." : "Found on LinkedIn.")}
           {number("leads", linkedin ? "Most people" : "Most emails", linkedin ? "People whose posts are read." : "People who get an email.")}
           {number("posts", "Posts per person", linkedin ? "0 skips reading posts." : "0 writes without posts.")}
         </div>

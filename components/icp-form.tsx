@@ -1,5 +1,7 @@
 "use client"
 
+import { Say } from "@/components/say"
+
 import Link from "next/link"
 import type { ReactNode } from "react"
 import { Plus } from "lucide-react"
@@ -184,7 +186,7 @@ export function TargetingFields({ draft, set }: { draft: IcpDraft; set: SetDraft
     <Field
       id="titles"
       label="Job titles to reach"
-      hint="Who to email at each company. Used to find stakeholders in Apollo and in prompts as {{icp.titles}}."
+      hint={<Say team="Who to email at each company. Used to find stakeholders in Apollo and in prompts as {{icp.titles}}." plain="Who to reach at each company." />}
     >
       <TagInput id="titles" value={draft.titles} onChange={(v) => set("titles", v)} placeholder="Owner, Founder" />
       <Suggestions options={SUGGESTIONS.titles} value={draft.titles} onAdd={(t) => set("titles", [...draft.titles, t])} />
@@ -192,7 +194,7 @@ export function TargetingFields({ draft, set }: { draft: IcpDraft; set: SetDraft
   )
 }
 
-function RuleRow({ label, children }: { label: string; children: ReactNode }) {
+function RuleRow({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="grid gap-1 py-2 sm:grid-cols-[180px_1fr] sm:gap-4">
       <dt className="text-[13px] text-muted-foreground">{label}</dt>
@@ -231,7 +233,7 @@ export function LeadIntelRule({ icp }: { icp: ICP }) {
         {icp.priority} <span className="text-muted-foreground">· lower is checked first</span>
         {!icp.enabled && <span className="ml-2 text-warning">Archived</span>}
       </RuleRow>
-      <RuleRow label="Searched on Google Maps">
+      <RuleRow label={<Say team="Searched on Google Maps" plain="Search words" />}>
         <Terms terms={icp.searchTerms} empty="Not sourced, only matched" />
       </RuleRow>
       <RuleRow label="Reads">
@@ -251,7 +253,7 @@ export function LeadIntelRule({ icp }: { icp: ICP }) {
         <Terms terms={icp.noneOf} empty="None" />
       </RuleRow>
       <RuleRow label="Instagram followers">{range(icp.minFollowers, icp.maxFollowers, "followers")}</RuleRow>
-      <RuleRow label="Google reviews">{icp.minReviews === null ? "Any" : `At least ${icp.minReviews}`}</RuleRow>
+      <RuleRow label={<Say team="Google reviews" plain="Reviews" />}>{icp.minReviews === null ? "Any" : `At least ${icp.minReviews}`}</RuleRow>
       <RuleRow label="Needs a website">{icp.requiresWebsite ? "Yes" : "No"}</RuleRow>
       <RuleRow label="Places">
         <Terms terms={icp.places} empty="Anywhere" />

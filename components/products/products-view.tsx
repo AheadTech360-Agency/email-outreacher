@@ -54,7 +54,7 @@ const FIELDS: { key: Exclude<keyof ProductFields, "name" | "url" | "customFields
   {
     key: "proof",
     label: "Proof",
-    hint: "{{product.proof}}. Only verified results, written exactly as you can claim them. Claude is told never to invent results.",
+    hint: "{{product.proof}}. Only verified results, written exactly as you can claim them. Emails never invent results.",
     placeholder: "Case studies or results you can show on request",
     rows: 3,
   },

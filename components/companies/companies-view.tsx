@@ -307,7 +307,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
 
       {/* One row: more filters and which records, then saved views. The fields open under it. */}
       <div className="flex flex-wrap items-center gap-2">
-        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[{key:"source",label:"Company source",options:choices(companies.data?.sources ?? [])},{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
+        <FacetFilters values={extra} onChange={(value) => { setExtra(value); setPage(1) }} count={total} fields={[...(prospector ? [] : [{key:"source",label:"Company source",options:choices(companies.data?.sources ?? [])}]),{key:"location",label:"Company location",type:"text",placeholder:"City or state"},{key:"website",label:"Website",options:PRESENCE_OPTIONS},{key:"contacts",label:"People found",options:PRESENCE_OPTIONS},{key:"scoreBand",label:"Company score",options:SCORE_OPTIONS},{key:"icpState",label:"ICP assignment",options:PRESENCE_OPTIONS}]} />
         <ArchiveFilter value={archiveFilter} onChange={(value) => { setArchiveFilter(value); setSelected(new Map()); setPage(1) }} />
         <div className="ml-auto">
           <ColumnPicker label="More columns" columns={COMPANY_COLUMNS} shown={extraColumns.shown} onToggle={extraColumns.toggle} onReset={extraColumns.reset} />
@@ -382,7 +382,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
         <EmptyState
           icon={Building2}
           title={activeIcp ? `No companies for ${activeIcp.name} yet` : "No companies yet"}
-          description="Use Find companies above: search Google Maps or Apollo, or bring them in from Lead Intel."
+          description={prospector ? "The companies your Quick Start runs find show up here." : "Use Find companies above: search Google Maps or Apollo, or bring them in from Lead Intel."}
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <ManagerOnly><Button variant="outline" onClick={() => setFinding("lead_intel")}>
@@ -415,7 +415,7 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                 </TableHead>
                 <TableHead>Company</TableHead>
                 {!activeIcp && <TableHead>ICP</TableHead>}
-                <TableHead>From</TableHead>
+                {!prospector && <TableHead>From</TableHead>}
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Score</TableHead>
                 <TableHead className="text-right">People</TableHead>
@@ -440,9 +440,11 @@ function Pipeline({ wsId, initialIcp }: { wsId: string; initialIcp: string }) {
                   {!activeIcp && (
                     <TableCell className="max-w-40 truncate text-[13px]">{(c.icpId && icpName.get(c.icpId)) || "—"}</TableCell>
                   )}
-                  <TableCell>
-                    <SourcePill source={c.source} />
-                  </TableCell>
+                  {!prospector && (
+                    <TableCell>
+                      <SourcePill source={c.source} />
+                    </TableCell>
+                  )}
                   <TableCell className="max-w-80">
                     <StatusPill status={c.status} />
                     {c.statusReason && <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{c.statusReason}</p>}

@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useState } from "react"
 import { ChevronDown, Download } from "lucide-react"
 import { ColumnPicker, type ColumnDef, downloadRowsCsv, safeHref, useColumns } from "@/components/column-picker"
+import { usePlain } from "@/components/say"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -69,7 +70,10 @@ const USUAL = ["name", "title", "email", "linkedin", "company", "website", "city
 export function RunPeople({ wsId, run }: { wsId: string; run: QuickstartDetail }) {
   // Reloaded as people come in (the people step's count changes while it runs).
   const people = useApi(() => fetchQuickstartPeople(wsId, run.id), [wsId, run.id, run.steps.people?.done ?? 0, run.status])
-  const { visible, shown, toggle, reset } = useColumns("quickstart-people", COLUMNS, USUAL)
+  // A Prospector doesn't see where each person was found.
+  const plain = usePlain()
+  const columns = plain ? COLUMNS.filter((c) => c.key !== "source") : COLUMNS
+  const { visible, shown, toggle, reset } = useColumns("quickstart-people", columns, USUAL)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const rows = people.data ?? []
   if (!rows.length) return null
@@ -87,7 +91,7 @@ export function RunPeople({ wsId, run }: { wsId: string; run: QuickstartDetail }
           <p className="text-sm text-muted-foreground">Everyone this run found, with their company. Pick the columns, then download them.</p>
         </div>
         <div className="flex gap-2">
-          <ColumnPicker columns={COLUMNS} shown={shown} onToggle={toggle} onReset={reset} />
+          <ColumnPicker columns={columns} shown={shown} onToggle={toggle} onReset={reset} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button size="sm">
@@ -99,12 +103,12 @@ export function RunPeople({ wsId, run }: { wsId: string; run: QuickstartDetail }
               <DropdownMenuItem disabled={!chosen.length} onSelect={() => save(chosen, visible)}>
                 Selected, these columns
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={!chosen.length} onSelect={() => save(chosen, COLUMNS)}>
+              <DropdownMenuItem disabled={!chosen.length} onSelect={() => save(chosen, columns)}>
                 Selected, every column
               </DropdownMenuItem>
               <DropdownMenuLabel>Everyone ({rows.length})</DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => save(rows, visible)}>Everyone, these columns</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => save(rows, COLUMNS)}>Everyone, every column</DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => save(rows, columns)}>Everyone, every column</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

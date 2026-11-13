@@ -12,6 +12,7 @@ import { BackendError, WorkspaceGate } from "@/components/companies/backend-stat
 import { CompanyContacts, ExcludeCompanyDialog } from "@/components/companies/company-contacts"
 import { FindStakeholdersDialog } from "@/components/companies/find-stakeholders-dialog"
 import { SOURCE_NAME, StatusPill } from "@/components/companies/pipeline-cells"
+import { Say } from "@/components/say"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { EnrichDialog } from "@/components/enrich-dialog"
 import { ReadPostsDialog } from "@/components/read-posts-dialog"
@@ -149,7 +150,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
             </a>
           ),
           [c.city, c.state].filter(Boolean).join(", "),
-          `from ${SOURCE_NAME[c.source]}`,
+          me?.role !== "prospector" && `from ${SOURCE_NAME[c.source]}`,
         ]}
         actions={
           <>
@@ -293,7 +294,7 @@ function Company({ wsId, id }: { wsId: string; id: string }) {
             <Skeleton className="h-24 w-full" />
           ) : posts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              No posts of theirs saved yet. Fetch posts on People reads the company&apos;s LinkedIn and Instagram.
+              <Say team="No posts of theirs saved yet. Fetch posts on People reads the company's LinkedIn and Instagram." plain="No posts of theirs saved yet." />
             </p>
           ) : (
             <ul className="max-w-3xl divide-y">
@@ -441,7 +442,8 @@ function Website({ company: c, pages, loading }: { company: PipelineCompany; pag
   return (
     <div className="max-w-3xl space-y-3">
       <p className="text-xs text-muted-foreground">
-        {pages.length} {pages.length === 1 ? "page" : "pages"} read {site.via === "jina" ? "with Jina (a browser)" : "directly"}
+        {pages.length} {pages.length === 1 ? "page" : "pages"} read
+        <Say team={site.via === "jina" ? " with Jina (a browser)" : " directly"} plain="" />
       </p>
       {(pages.length ? pages : [{ url: site.url ?? c.domain ?? "", role: "homepage", text: site.text }]).map((p) => (
         <details key={p.url} className="rounded-md border px-3 py-2 text-sm" open={pages.length <= 1}>

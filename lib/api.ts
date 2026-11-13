@@ -1412,6 +1412,8 @@ export interface QuickstartSettings {
   source?: "google_maps" | "existing" | "linkedin"
   /** existing: only the companies in this smart list. */
   smartListId?: string | null
+  /** A Prospector started it: its screens name no tools or sources. */
+  prospector?: boolean
   /** linkedin: the web searches. brave: free for 1,000 a month. google: Google through Apify, paid per search. */
   webSearch?: "brave" | "google"
   /** existing: look on LinkedIn at companies where no one with an email is known yet. */
@@ -1494,7 +1496,7 @@ export const runWhere = (s: QuickstartSettings) =>
   s.source === "existing"
     ? "Companies you already have"
     : s.source === "linkedin"
-      ? `LinkedIn: ${s.searchTerms.join(", ")}${s.places.length ? ` in ${s.places.join("; ")}` : ""}`
+      ? `${s.prospector ? "Search" : "LinkedIn"}: ${s.searchTerms.join(", ")}${s.places.length ? ` in ${s.places.join("; ")}` : ""}`
       : `${s.searchTerms.join(", ")} around ${s.places.join("; ")}`
 
 /** A company a LinkedIn run analysed: its data, links, latest posts and brief. */
@@ -1521,8 +1523,12 @@ export interface CompanyBrief {
     hooks: { hook: string; why: string; evidence: string }[]
     best_contacts: string[]
     cautions: string[]
+    /** Each person found there, best to email first (analyses written before this have none). */
+    people?: { name: string; title: string; who: string; angle: string; opener: string; evidence: string }[]
   }
   posts: { source: string; url: string; postedAt: string | null; text: string; whose: string }[]
+  /** The people at the company, with how to reach them. */
+  people: { name: string; title: string; email: string | null; linkedinUrl: string | null }[]
 }
 
 export const fetchQuickstartBriefs = (workspaceId: string, runId: string) =>

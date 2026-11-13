@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react"
 import { ICP_SOURCE_LABELS } from "@/components/icp-form"
+import { Say } from "@/components/say"
 import { TagInput } from "@/components/tag-input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -75,7 +76,7 @@ export const icpFields = (icp: IcpCreate): IcpCreate => ({
 
 const toNumber = (value: string) => (value.trim() === "" ? null : Number(value))
 
-export function IcpField({ id, label, hint, error, children }: { id: string; label: string; hint?: string; error?: string; children: ReactNode }) {
+export function IcpField({ id, label, hint, error, children }: { id: string; label: ReactNode; hint?: ReactNode; error?: string; children: ReactNode }) {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
@@ -122,8 +123,8 @@ export function IcpBasicsInputs({
       <div className="sm:col-span-2">
         <IcpField
           id="icp-search-terms"
-          label="Words to find them on Google Maps"
-          hint="What you'd type into Google Maps. Search Google Maps and Search Apollo start from these."
+          label={<Say team="Words to find them on Google Maps" plain="Search words" />}
+          hint={<Say team="What you'd type into Google Maps. Search Google Maps and Search Apollo start from these." plain="What you'd search for to find them. Quick Start starts from these." />}
         >
           <TagInput id="icp-search-terms" value={icp.searchTerms} onChange={(v) => set("searchTerms", v)} placeholder="screen printing" />
         </IcpField>
@@ -195,7 +196,7 @@ export function IcpRuleInputs({ icp, set, errors }: { icp: IcpCreate; set: SetIc
             onChange={(e) => set("maxFollowers", toNumber(e.target.value))}
           />
         </IcpField>
-        <IcpField id="icp-min-reviews" label="Fewest Google reviews" error={errors.reviews}>
+        <IcpField id="icp-min-reviews" label={<Say team="Fewest Google reviews" plain="Fewest reviews" />} error={errors.reviews}>
           <Input
             id="icp-min-reviews"
             type="number"

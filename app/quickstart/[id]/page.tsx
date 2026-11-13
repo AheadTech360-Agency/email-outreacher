@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/empty-state"
 import { ManagerOnly } from "@/components/manager-only"
 import { safeHref } from "@/components/column-picker"
 import { RunPeople } from "@/components/quickstart/run-people"
+import { usePlain } from "@/components/say"
 import { PageHeader } from "@/components/page-header"
 import { RUN_STATUS } from "@/components/quickstart/run-status"
 import { Pill, type PillTone } from "@/components/status"
@@ -44,8 +45,17 @@ const STEPS: { key: QuickstartStepKey; label: string; what: string }[] = [
   { key: "profiles", label: "Fill in profiles", what: "Their LinkedIn profiles and their company's LinkedIn page and Instagram, where not read yet" },
   { key: "posts", label: "Read their posts", what: "Their recent LinkedIn and Instagram posts, for the opening line" },
   { key: "write", label: "Write emails", what: "One email each, from your templates; they wait for your review" },
-  { key: "analysis", label: "Analyse companies", what: "A brief on each qualified company: what they do, what they post, the hooks to use" },
+  { key: "analysis", label: "Analyse companies and people", what: "On each qualified company and its people: what they do, what they post, the hooks to use" },
 ]
+
+/** A Prospector's steps: what each does, not which tool does it. */
+const PLAIN_STEPS: Partial<Record<QuickstartStepKey, { label?: string; what: string }>> = {
+  find: { what: "Companies matching your search words" },
+  google: { what: "Each company's website, Instagram and Facebook, where they're missing" },
+  research: { what: "Reads each website, checks the ICP's rule, scores the fit" },
+  people: { label: "Find people", what: "The people at the qualified companies, with their work emails where found" },
+  posts: { what: "Their recent posts, for the hooks" },
+}
 const COMPANY: Record<string, { label: string; tone: PillTone }> = {
   found: { label: "To verify", tone: "neutral" },
   review: { label: "To approve", tone: "warning" },
@@ -275,11 +285,13 @@ function Summary({ run }: { run: QuickstartDetail }) {
 }
 
 function Steps({ run }: { run: QuickstartDetail }) {
+  const plain = usePlain()
+  const steps = plain ? STEPS.map((s) => ({ ...s, ...PLAIN_STEPS[s.key] })) : STEPS
   return (
     <section className="space-y-3">
       <h2 className="text-base font-semibold">Steps</h2>
       <ol className="divide-y divide-rule rounded-lg border">
-        {(run.stepOrder?.length ? STEPS.filter((s) => run.stepOrder!.includes(s.key)) : STEPS.filter((s) => s.key !== "website" && s.key !== "profiles")).map((s, i) => {
+        {(run.stepOrder?.length ? steps.filter((s) => run.stepOrder!.includes(s.key)) : steps.filter((s) => s.key !== "website" && s.key !== "profiles")).map((s, i) => {
           const step = run.steps[s.key]
           const state = step?.state ?? "waiting"
           const Icon = { waiting: Circle, running: Loader2, done: Check, skipped: Minus, failed: X }[state]
@@ -483,8 +495,10 @@ function Briefs({ wsId, run }: { wsId: string; run: QuickstartDetail }) {
   return (
     <section className="space-y-3">
       <div>
-        <h2 className="text-base font-semibold">Company analysis</h2>
-        <p className="text-sm text-muted-foreground">What each qualified company is about, what they post, and the hooks most likely to work.</p>
+        <h2 className="text-base font-semibold">Company and people analysis</h2>
+        <p className="text-sm text-muted-foreground">
+          What each qualified company is about, what they post, the hooks most likely to work, and how to approach each person there.
+        </p>
       </div>
       {briefs.error && !briefs.data ? (
         <BackendError message={briefs.error} onRetry={briefs.reload} />
@@ -570,10 +584,55 @@ function BriefCard({ company: c, open }: { company: CompanyBrief; open: boolean 
               </ul>
             </div>
           )}
-          {b.best_contacts.length > 0 && <BriefList title="Who to email first" items={b.best_contacts} />}
+          {!b.people?.length && b.best_contacts.length > 0 && <BriefList title="Who to email first" items={b.best_contacts} />}
         </div>
       </div>
+      {b.people && b.people.length > 0 && <BriefPeople people={b.people} contacts={c.people ?? []} />}
     </details>
+  )
+}
+
+/** Each person there, best to email first: who they are, how to approach them, an opening line, and how to reach them. */
+function BriefPeople({ people, contacts }: { people: NonNullable<CompanyBrief["brief"]["people"]>; contacts: CompanyBrief["people"] }) {
+  const reach = (name: string) => contacts.find((c) => c.name.trim().toLowerCase() === name.trim().toLowerCase())
+  return (
+    <div className="space-y-2 border-t px-4 py-4 text-sm">
+      <h3 className="text-sm font-semibold">People ({people.length})</h3>
+      <ol className="grid gap-2 lg:grid-cols-2">
+        {people.map((p, i) => {
+          const contact = reach(p.name)
+          const linkedin = safeHref(contact?.linkedinUrl)
+          return (
+            <li key={`${p.name}-${i}`} className="space-y-1 rounded-md bg-muted/40 px-3 py-2">
+              <p className="font-medium">
+                {i + 1}. {p.name}
+                {p.title && <span className="font-normal text-muted-foreground"> · {p.title}</span>}
+              </p>
+              <p className="text-muted-foreground">{p.who}</p>
+              <p>
+                <span className="font-medium">Angle: </span>
+                {p.angle}
+              </p>
+              <p>
+                <span className="font-medium">Open with: </span>
+                {p.opener}
+              </p>
+              <p className="text-xs text-muted-foreground">Based on: {p.evidence}</p>
+              {(contact?.email || linkedin) && (
+                <p className="flex flex-wrap gap-x-3 text-xs">
+                  {contact?.email && <span>{contact.email}</span>}
+                  {linkedin && (
+                    <a href={linkedin} target="_blank" rel="noreferrer" className="hover:underline">
+                      LinkedIn profile
+                    </a>
+                  )}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ol>
+    </div>
   )
 }
 

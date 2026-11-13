@@ -67,7 +67,7 @@ export default function IcpLayout({ children }: { children: ReactNode }) {
       <div className="-mt-4 md:-mt-5">
         <PageHeader
           title={icp.name}
-          description={`${icp.enabled ? "" : "Archived · "}${icp.description || `${icp.industry} · from Lead Intel`}`}
+          description={`${icp.enabled ? "" : "Archived · "}${icp.description || (prospector ? icp.industry : `${icp.industry} · from Lead Intel`)}`}
           actions={<IcpLifecycleActions icp={icp} />}
         >
           {!prospector && <PipelineStrip statuses={statuses} className="max-w-3xl" />}

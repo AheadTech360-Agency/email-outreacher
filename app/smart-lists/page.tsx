@@ -191,11 +191,13 @@ function SmartLists({ wsId }: { wsId: string }) {
           icon={ListTree}
           title={all.length ? "No matching smart lists" : "No smart lists yet"}
           description={
-            unsorted
+            unsorted && !prospector
               ? `Sort your ${what} and Claude puts each one in a broad list, like ${kind === "company" ? "Retail or Manufacturing" : "Owners & Executives or Marketing"}.`
-              : kind === "company"
-                ? "Find companies on the Companies page, or import an Apollo CSV on People, then sort them here."
-                : "Add people on the People page, or import an Apollo CSV, then sort them here."
+              : prospector
+                ? "Make a list, then add the companies or people your Quick Start runs found."
+                : kind === "company"
+                  ? "Find companies on the Companies page, or import an Apollo CSV on People, then sort them here."
+                  : "Add people on the People page, or import an Apollo CSV, then sort them here."
           }
         />
       ) : (
