@@ -193,7 +193,7 @@ function NewRun({ wsId }: { wsId: string }) {
     !icp && "Pick an ICP",
     !existing && !terms.length && "Add a search term",
     source === "google_maps" && !places.length && "Add a place",
-    source === "google_maps" && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a state or the United States)",
+    source === "google_maps" && !(num("radius") >= 1 && num("radius") <= 50) && "Radius: 1 to 50 miles (for a wider area, add a whole state or country)",
     source === "google_maps" && !(num("requests") >= 2 && num("requests") <= 100) && `${prospector ? "Searches" : "Google requests"}: 2 to 100`,
     prospector && !searches.length && "Your account has no searches allowed. Ask an admin.",
     !(num("companies") >= 1 && num("companies") <= (existing ? 2000 : linkedin ? 200 : 100)) && `Companies: 1 to ${existing ? "2,000" : linkedin ? 200 : 100}`,
@@ -353,7 +353,7 @@ function NewRun({ wsId }: { wsId: string }) {
             {linkedin
               ? prospector ? "Cities, states or countries, like Austin or United States. Empty searches everywhere."
                 : "Cities, states or countries as LinkedIn names them, like Austin or United States. Empty searches everywhere."
-              : "US cities or postcodes, like Austin, TX, or a whole state or the United States (searched in full)."}{" "}
+              : "Cities or postcodes anywhere, like Austin, TX or Karachi, or a whole state or country (searched in full)."}{" "}
             Press Enter after each.
           </p>
         </div>

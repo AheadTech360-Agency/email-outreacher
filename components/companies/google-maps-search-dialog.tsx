@@ -125,7 +125,7 @@ export function GoogleMapsSearchDialog({
             <Label htmlFor="maps-locations">Places</Label>
             <TagInput places id="maps-locations" value={locations} onChange={setLocations} placeholder="Chicago, IL" />
             <p className={errors.locations ? "text-xs text-destructive" : "text-xs text-muted-foreground"}>
-              {errors.locations || "US cities or postcodes, like Chicago, IL, or a whole state or the United States (searched in full). Press Enter after each."}
+              {errors.locations || "Cities or postcodes anywhere, like Chicago, IL or London, or a whole state or country (searched in full). Press Enter after each."}
             </p>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
